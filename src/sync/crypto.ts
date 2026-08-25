@@ -2,13 +2,17 @@
  * 加密工具（D4：设备本地随机密钥，AES-256-GCM）
  *
  * 安全红线：
- * - 密钥仅在设备本地生成，存于 localStorage['sdb:crypto:key']（base64 的 32 字节）。
+ * - 密钥仅在设备本地生成，base64 的 32 字节。
+ * - Web 模式：存于 localStorage['sdb:crypto:key']。
+ * - Tauri 原生壳模式：存于**系统 Keychain/Keystore**（见 src/native/secureKey.ts），更安全。
  * - 密钥永不进 IndexedDB、永不进上传快照、永不进日志。
  * - 明文密码只在内存中短暂存在（saveConfig 时加密后立即丢弃），不进 state / 日志 / 快照。
  */
 import { bytesToBase64, base64ToBytes } from '@/utils/base64';
 import { SdbError } from '@/sync/errors';
 import { ERROR_CODES } from '@/utils/errorCodes';
+import { isTauriShell } from '@/utils/platform';
+import { readDeviceKeyB64, writeDeviceKeyB64 } from '@/native/secureKey';
 
 const STORAGE_KEY = 'sdb:crypto:key';
 
@@ -19,7 +23,7 @@ const STORAGE_KEY = 'sdb:crypto:key';
 export async function ensureDeviceKey(): Promise<CryptoKey> {
   let rawB64 = '';
   try {
-    rawB64 = localStorage.getItem(STORAGE_KEY) ?? '';
+    rawB64 = (await getRawDeviceKeyB64()) ?? '';
   } catch {
     rawB64 = '';
   }
@@ -28,7 +32,7 @@ export async function ensureDeviceKey(): Promise<CryptoKey> {
     const bytes = crypto.getRandomValues(new Uint8Array(32));
     rawB64 = bytesToBase64(bytes);
     try {
-      localStorage.setItem(STORAGE_KEY, rawB64);
+      await setRawDeviceKeyB64(rawB64);
     } catch {
       /* 隐私模式等场景忽略写入失败（密钥将仅存于本次会话内存） */
     }
@@ -93,8 +97,11 @@ export async function decryptPassword(cipher: string): Promise<string> {
 const KEY_BACKUP_V = 1;
 const PBKDF2_ITER = 200_000;
 
-/** 读取本机设备密钥（base64 32 字节）。无则返回 null。 */
-export function getRawDeviceKeyB64(): string | null {
+/** 读取本机设备密钥（base64 32 字节）。无则返回 null。Tauri 优先读系统 Keychain/Keystore，Web 读 localStorage。 */
+export async function getRawDeviceKeyB64(): Promise<string | null> {
+  // Tauri 原生壳：优先从系统 Keychain/Keystore 读取
+  if (isTauriShell()) return readDeviceKeyB64();
+  // Web：localStorage
   try {
     return localStorage.getItem(STORAGE_KEY);
   } catch {
@@ -102,8 +109,14 @@ export function getRawDeviceKeyB64(): string | null {
   }
 }
 
-/** 写入本机设备密钥（base64 32 字节）。存储不可用时静默忽略（密钥仅存于本次会话内存）。 */
-export function setRawDeviceKeyB64(raw: string): void {
+/** 写入本机设备密钥（base64 32 字节）。Tauri 写入系统 Keychain/Keystore（失败自动回退 localStorage）；Web 写入 localStorage。 */
+export async function setRawDeviceKeyB64(raw: string): Promise<void> {
+  // Tauri 原生壳：写入系统 Keychain/Keystore（secureKey 内部失败会回退 localStorage）
+  if (isTauriShell()) {
+    await writeDeviceKeyB64(raw);
+    return;
+  }
+  // Web：localStorage
   try {
     localStorage.setItem(STORAGE_KEY, raw);
   } catch {
@@ -191,15 +204,15 @@ export async function decryptKeyWithPassphrase(json: string, passphrase: string)
   return recovered;
 }
 
-/** 便捷封装：导出本机密钥为备份 JSON（读取 localStorage）。 */
+/** 便捷封装：导出本机密钥为备份 JSON（读取本机密钥，Tauri 来自 Keychain/Keystore，Web 来自 localStorage）。 */
 export async function exportKeyBackup(passphrase: string): Promise<string> {
-  const raw = getRawDeviceKeyB64();
+  const raw = await getRawDeviceKeyB64();
   if (!raw) throw new SdbError(ERROR_CODES.SDB_CRYPTO_FAIL, 'crypto', '本机尚未生成加密密钥，无需备份');
   return encryptKeyWithPassphrase(raw, passphrase);
 }
 
-/** 便捷封装：用备份恢复本机密钥（写入 localStorage）。 */
+/** 便捷封装：用备份恢复本机密钥（写入本机密钥存储，Tauri 进 Keychain/Keystore，Web 进 localStorage）。 */
 export async function importKeyBackup(json: string, passphrase: string): Promise<void> {
   const recovered = await decryptKeyWithPassphrase(json, passphrase);
-  setRawDeviceKeyB64(recovered);
+  await setRawDeviceKeyB64(recovered);
 }

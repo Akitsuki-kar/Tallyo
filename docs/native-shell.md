@@ -18,12 +18,12 @@ Tauri 因复用系统 WebView，体积与内存远低于「打包引擎」类方
 
 ```
 src-tauri/                # Rust 原生壳（独立于 Vue 代码）
-├─ Cargo.toml             # Rust 依赖：tauri + tauri-plugin-dialog（按需，仅此一个插件）
+├─ Cargo.toml             # Rust 依赖：tauri + tauri-plugin-dialog + tauri-plugin-fs + tauri-plugin-keyring（按需，最小集）
 ├─ tauri.conf.json        # 产物名 Tallyo、identifier com.tallyo.app、前端指向 ../dist
 ├─ build.rs
-├─ capabilities/default.json   # 权限：core:default + dialog:default（最小权限）
+├─ capabilities/default.json   # 权限：core:default + dialog:default + fs:allow-write-file + keyring:allow-*-password
 ├─ icons/icon.png         # 图标源（复用 PWA 图标，需一键生成各平台图标）
-└─ src/{main.rs,lib.rs}   # 入口：仅挂载 WebView 与 dialog 插件
+└─ src/{main.rs,lib.rs}   # 入口：挂载 WebView 与 dialog/fs/keyring 插件
 ```
 
 ## 环境准备（一次性）
@@ -33,7 +33,7 @@ src-tauri/                # Rust 原生壳（独立于 Vue 代码）
    - Windows：Visual Studio Build Tools（勾选「C++ 桌面开发」）+ WebView2（Win11 自带）。
    - macOS：`xcode-select --install`。
    - Linux：见 Tauri 官方「prerequisites」（webkit2gtk 等）。
-3. 安装前端依赖：`npm install`（会拉取 `@tauri-apps/cli`、`@tauri-apps/api`、`@tauri-apps/plugin-dialog`、`cross-env`）。
+3. 安装前端依赖：`npm install`（会拉取 `@tauri-apps/cli`、`@tauri-apps/api`、`@tauri-apps/plugin-dialog`、`@tauri-apps/plugin-fs`、`tauri-plugin-keyring-api`、`cross-env`）。
 
 ## 生成平台图标（首次必做）
 
@@ -55,10 +55,17 @@ npm run tauri:dev
 npm run tauri:build
 ```
 
-> 这两个脚本经由 `cross-env TAURI_BUILD=1` 设置环境变量，触发 `vite.config.ts` 中的「Tauri 模式」：
+> `dev:tauri` / `build:tauri` 经由 `cross-env TAURI_BUILD=1` 为 Vite 设置环境变量，触发 `vite.config.ts` 中的「Tauri 模式」：
 > 1. **CSP 放宽**：`connect-src` 由 `'self'` 放宽为 `'self' https: wss: ws:`，允许原生壳**直连 WebDAV**（见下）。
 > 2. **禁用 PWA SW**：资源已本地打包，无需 Service Worker。
 > 3. **守卫 `registerSW`**：`main.ts` 中仅在非 Tauri 时注册 SW。
+
+### 构建验证（已通过）
+
+- `npm run build`（Web/PWA）：生成 `dist/sw.js`、CSP 严格 `connect-src 'self'`、Tauri 专有包全部 external（不进 web 包）。
+- `npm run build:tauri`（即 `vue-tsc --noEmit && cross-env TAURI_BUILD=1 vite build`）：type-check 通过、不生成 `sw.js`、CSP 放宽 `connect-src 'self' https: wss: ws:`、Tauri 插件被打包进 `dist/`。
+
+> 注意：`build:tauri` 必须把 `TAURI_BUILD=1` 作用在 `vite build` 这一步（用 `cross-env TAURI_BUILD=1 vite build`，而非 `cross-env ... vue-tsc && vite build`），否则 `&&` 后的 `vite build` 拿不到环境变量，会退化成 Web 构建（仍带 SW）。
 
 ## WebDAV 直连（顺带解决「是否必须 Nginx」）
 
@@ -67,11 +74,32 @@ npm run tauri:build
 - 在原生壳里，把同步设置中的服务器地址填为 WebDAV 完整 HTTPS 地址即可。
 - 对应 CSP 已在 Tauri 模式放开 `connect-src https:`，不会被拦。
 
-## 可选的原生增强（保持「按需、最小」）
+## 已落地的原生增强
 
-当前仅挂载 `dialog` 插件（PDF 导出走系统保存框）。若需更强体验，在 `src-tauri/src/lib.rs` 追加插件，并在 `capabilities/default.json` 放开权限：
+为在「最小存储 / 最小内存」前提下把体验拉满，已接入两个与原生壳强相关的增强（仅 Tauri 模式生效，Web 模式自动回退，业务代码零分支）：
 
-- **密钥进系统钥匙串**：`@tauri-apps/plugin-keyring` / 安全存储，把应用锁设备密钥从 IndexedDB 迁到 Keychain/Keystore，更安全、更省 Web 存储。
+1. **设备密钥进系统 Keychain / Keystore**（`src/native/secureKey.ts` + `src/sync/crypto.ts`）
+   - D4 的设备加密密钥（AES-256-GCM 的 base64 主密钥）在原生壳里存进系统密钥库（macOS Keychain / Windows 凭据管理器 / Android Keystore / Linux Secret Service），而非 WebView 的 localStorage，安全性更高。
+   - 走社区插件 `tauri-plugin-keyring-api`（Rust crate `tauri-plugin-keyring`，Cargo 版本 `0.1`；JS 包 `0.1.1`），调用 `getPassword` / `setPassword` / `deletePassword(service, user)`，密钥以字符串形式存取。
+   - `capabilities/default.json` 放开 `keyring:allow-get-password` / `keyring:allow-set-password` / `keyring:allow-delete-password`。
+   - 任何原生调用失败都**静默回退 localStorage**，密钥永不丢失（加密红线优先于「最精简」）。
+
+2. **PDF 导出走系统保存框**（`src/utils/pdf.ts`）
+   - Tauri 模式用 `@tauri-apps/plugin-dialog` 的 `save()` 弹出系统保存对话框，再用 `@tauri-apps/plugin-fs` 的 `writeFile()` 把 jsPDF 字节写入用户选定路径；体验优于浏览器「下载」弹层。
+   - 用户在对话框取消则**不落盘**；原生调用失败自动回退浏览器 `pdf.save()`。
+
+### Web 包保持最精简（关键约束）
+
+`secureKey.ts` / `pdf.ts` 对 Tauri 专有包（`@tauri-apps/plugin-dialog`、`@tauri-apps/plugin-fs`、`tauri-plugin-keyring-api`）均用**字面量动态 `import()`**，并在 `vite.config.ts` 中：
+- **Web/PWA 构建**（`!TAURI_BUILD`）：把这些 specifier 列入 `build.rollupOptions.external`，Rollup 不解析、不打包它们；且调用点被 `isTauriShell()` 守卫，浏览器运行期永不执行 → web 包不掺任何 Tauri 代码。
+- **Tauri 构建**（`TAURI_BUILD=1`）：不 external，字面量被正常打包进原生壳供运行期使用。
+
+> 因此同一份 `src/` 在两种构建下都能通过类型检查与打包，且 web 产物依旧是纯 PWA。
+
+## 可选扩展（保持「按需、最小」）
+
+若需更强体验，在 `src-tauri/src/lib.rs` 追加插件，并在 `capabilities/default.json` 放开权限：
+
 - **开机自启**：`@tauri-apps/plugin-autostart`。
 - **生物识别解锁**：`@tauri-apps/plugin-biometric`（桌面/移动）。
 - **系统托盘 / 全局快捷键**：`@tauri-apps/plugin-tray-icon` / `global-shortcut`。

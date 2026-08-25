@@ -164,6 +164,7 @@ docs/              # 架构蓝图 / 同步配置 / 上线审计 / 回归清单
 
 - Vue 业务代码零改动，Web/PWA 与原生壳共用同一套 `src/` 与 `dist/`。
 - 原生壳里**可直连 WebDAV**（无浏览器 CORS，无需 Nginx 反代），同步设置填完整 HTTPS 地址即可。
+- 已落地的原生增强：**设备密钥进系统 Keychain/Keystore**（更安全）、**PDF 导出走系统保存框**（体验更顺）；两者在 Web 模式自动回退，业务代码零分支。
 - 详见 [`docs/native-shell.md`](docs/native-shell.md)。快速起手：
 
 ```bash

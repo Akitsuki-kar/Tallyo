@@ -8,6 +8,7 @@
  * 因此父组件应在弹层打开后再调用此函数。
  */
 import { logger } from '@/utils/logger';
+import { isTauriShell } from '@/utils/platform';
 
 /**
  * 将 DOM 元素导出为 PDF 文件并下载。
@@ -65,7 +66,32 @@ export async function exportElementToPdf(
       pdf.addImage(imgData, 'JPEG', margin, yOffset, imgWidth, imgHeight);
     }
 
-    // 下载
+    // 导出：Tauri 原生壳走系统保存对话框，体验优于浏览器下载；Web 仍用浏览器下载。
+    if (isTauriShell()) {
+      try {
+        // 字面量 specifier：Tauri 构建期由 Vite 正常打包进原生壳；Web 构建期被 vite.config 的
+        // rollupOptions.external 标为外部（不解析/不打包）。该分支被 isTauriShell() 守卫，浏览器永不执行。
+        const { save } = (await import('@tauri-apps/plugin-dialog')) as any;
+        const { writeFile } = (await import('@tauri-apps/plugin-fs')) as any;
+        const path = await save({
+          defaultPath: `${filename}.pdf`,
+          filters: [{ name: 'PDF', extensions: ['pdf'] }],
+        });
+        if (path) {
+          const bytes = pdf.output('arraybuffer') as ArrayBuffer;
+          await writeFile(path, new Uint8Array(bytes));
+          return;
+        }
+        // 用户在对话框取消：不落盘，直接返回（不触发浏览器下载）。
+        return;
+      } catch (e) {
+        logger.warn('[SDB:pdf]', '原生保存失败，回退浏览器下载', {
+          message: e instanceof Error ? e.message : String(e),
+        });
+        // 继续走下方浏览器下载兜底
+      }
+    }
+
     pdf.save(`${filename}.pdf`);
   } catch (err) {
     logger.error('[SDB:pdf]', 'PDF 导出失败', {

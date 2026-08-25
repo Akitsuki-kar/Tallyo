@@ -15,9 +15,14 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-# 仅引入内核与「按需插件」。dialog 用于 PDF 导出走系统保存框，提升体验且不增加体积负担。
+# 仅引入内核与「按需插件」，保持最精简：
+# - dialog：PDF 导出走系统保存框
+# - fs：配合 dialog 把 PDF 字节写入用户选定路径
+# - keyring：把设备加密密钥存进系统 Keychain/Keystore（Web 模式下则由前端走 localStorage）
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-keyring = "0.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 

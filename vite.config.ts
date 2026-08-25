@@ -36,6 +36,19 @@ export default defineConfig({
     // ECharts 等图表依赖构成较大的 Stats 异步 chunk（gzip 后仍属可接受范围），
     // 放宽体积告警阈值以避免无意义的构建告警。
     chunkSizeWarningLimit: 800,
+    // Web/PWA 构建下，把 Tauri 专有模块标为 external：
+    // 它们仅在原生壳运行期按需动态加载，且被 isTauriShell() 守卫，浏览器永不执行，
+    // 故不应进入 web 包、也不应在构建期被解析（避免 failed to resolve import）。
+    // Tauri 构建（TAURI_BUILD=1）不 external，需正常打包这些插件供原生壳运行期使用。
+    rollupOptions: isTauri
+      ? {}
+      : {
+          external: [
+            '@tauri-apps/plugin-dialog',
+            '@tauri-apps/plugin-fs',
+            'tauri-plugin-keyring-api',
+          ],
+        },
   },
   // 注入 import.meta.env.TAURI_BUILD，供 main.ts 守卫 registerSW 使用。
   define: {
