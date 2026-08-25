@@ -1,0 +1,30 @@
+[package]
+name = "tallyo"
+version = "0.1.0"
+description = "Tallyo (水电动账) - 离线优先的水电读数记账原生壳"
+authors = ["Akitsuki_Kar"]
+edition = "2021"
+rust-version = "1.77.2"
+
+# Tauri 2 库/二进制产物：desktop 用 cdylib/rlib，mobile 用 staticlib。
+[lib]
+name = "tallyo_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# 仅引入内核与「按需插件」。dialog 用于 PDF 导出走系统保存框，提升体验且不增加体积负担。
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+# 体积优先：裁剪符号、开启链接期优化（LTO）与单代码生成单元，配合原生 WebView 实现最精简产物。
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

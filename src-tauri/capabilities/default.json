@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Tallyo 主窗口默认权限：核心运行 + 文件选择对话框（PDF 导出用）。",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "dialog:default"
+  ]
+}

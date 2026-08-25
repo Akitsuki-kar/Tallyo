@@ -52,8 +52,11 @@ window.addEventListener('error', (event) => {
 
 app.mount('#app');
 
-// 注册 PWA Service Worker（autoUpdate：后台自动更新）
-registerSW({ immediate: true });
+// 注册 PWA Service Worker（autoUpdate：后台自动更新）。
+// Tauri 原生壳下由本地打包保证离线，且 WebView 对 SW 支持有限，故跳过注册。
+if (!import.meta.env.TAURI_BUILD) {
+  registerSW({ immediate: true });
+}
 
 /**
  * 启动初始化：分两阶段加载

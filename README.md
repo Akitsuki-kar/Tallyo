@@ -158,6 +158,25 @@ docs/              # 架构蓝图 / 同步配置 / 上线审计 / 回归清单
 
 ---
 
+## 🖥 原生壳（Tauri 2）
+
+想要桌面 / 移动 App 而不牺牲「最小存储、最小内存、最精简」？项目已接入 **Tauri 2**：复用系统原生 WebView，不打包 Chromium，桌面安装包约 5MB、常驻内存约 80MB（Electron 方案是它的 ~20 倍）。
+
+- Vue 业务代码零改动，Web/PWA 与原生壳共用同一套 `src/` 与 `dist/`。
+- 原生壳里**可直连 WebDAV**（无浏览器 CORS，无需 Nginx 反代），同步设置填完整 HTTPS 地址即可。
+- 详见 [`docs/native-shell.md`](docs/native-shell.md)。快速起手：
+
+```bash
+# 1. 安装 Rust 工具链（rustup.rs）与系统依赖（见文档）
+# 2. 生成各平台图标（一次性）
+npx tauri icon src-tauri/icons/icon.png
+# 3. 开发 / 打包
+npm run tauri:dev      # 带热更新的原生壳
+npm run tauri:build    # 生成对应平台安装包
+```
+
+---
+
 ## 📄 许可
 
 本项目基于 **Apache License 2.0** 开源（详见仓库根目录 [`LICENSE`](LICENSE)）。

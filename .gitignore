@@ -17,6 +17,10 @@ vite.config.ts.timestamp-*.mjs
 *.local
 *.log
 
+# Rust / Tauri 构建产物（src-tauri）
+src-tauri/target/
+
+
 # 编辑器 / OS
 .vscode/
 .idea/
