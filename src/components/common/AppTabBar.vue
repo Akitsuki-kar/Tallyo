@@ -28,7 +28,7 @@ function onQuickRecord(): void {
       <span class="sdb-tabbar__logo" aria-hidden="true">水</span>
       <span class="sdb-tabbar__brand-text">
         <strong class="sdb-tabbar__name">水电动账</strong>
-        <span class="sdb-tabbar__sub">水电小账本</span>
+        <span class="sdb-tabbar__sub">Tallyo · 水电小账本</span>
       </span>
     </div>
 
