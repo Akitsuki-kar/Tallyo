@@ -1,0 +1,25 @@
+# 依赖
+node_modules/
+
+# 构建产物
+dist/
+dist-audit/
+dist-verify-*/
+
+# Vite 缓存
+.vite-cache/
+node_modules/.cache/
+
+# Vite 临时配置（自动生成）
+vite.config.ts.timestamp-*.mjs
+
+# 本地环境 / 日志
+*.local
+*.log
+
+# 编辑器 / OS
+.vscode/
+.idea/
+.DS_Store
+.workbuddy/
+Thumbs.db

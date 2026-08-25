@@ -1,0 +1,121 @@
+/* =========================================================================
+ * 水电动账（SDB）设计 token —— 有机手作感 / 圆体亲和
+ * 配色全部用 OKLCH（感知均匀）；中性色带一缕暖意（tinted neutrals），不用纯黑纯白。
+ * 既有 --sdb-* 名称全部保留，并向 Vant 暴露等价 --van-* 覆盖。
+ * 详见项目根 .impeccable.md 的 Design Context。
+ * ========================================================================= */
+
+/* ---- 本地自托管字体（离线 PWA 不依赖 CDN） ---- */
+/* Caveat 手写体仅用于 hero 大数字，Latin 子集，渐进增强 */
+@font-face {
+  font-family: 'Caveat';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/caveat-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215,
+    U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Caveat';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/caveat-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215,
+    U+FEFF, U+FFFD;
+}
+
+:root {
+  /* ---- 品牌主色（terracotta / amber 暖橘） ---- */
+  --sdb-primary: oklch(64% 0.155 47);
+  --sdb-primary-light: oklch(83% 0.1 52);
+  --sdb-primary-dark: oklch(53% 0.145 44);
+  /* 主色之上的文字色（顶栏/主按钮上的字） */
+  --sdb-on-primary: oklch(99% 0.008 85);
+  /* 蜂蜜金强调（点缀，稀有使用） */
+  --sdb-accent: oklch(82% 0.13 88);
+
+  /* ---- 中性 / 表面（tinted neutrals，暖纸感） ---- */
+  --sdb-bg: oklch(96.5% 0.014 80); /* 米色纸底 */
+  --sdb-surface: oklch(98.5% 0.008 80); /* 卡片纸面（近白但暖） */
+  --sdb-surface-2: oklch(93% 0.022 75); /* 次级表面（芯片/备注底） */
+  --sdb-border: oklch(88% 0.022 70); /* 细分隔线/边框 */
+  --sdb-text: oklch(32% 0.026 50); /* 暖棕正文（非纯黑） */
+  --sdb-text-secondary: oklch(53% 0.024 55);
+  --sdb-text-tertiary: oklch(66% 0.02 58); /* 占位符 / 极弱提示 */
+  /* 语义色按钮（绿/琥珀/红）之上的文字色：近暖白 */
+  --sdb-on-semantic: oklch(99% 0.008 85);
+
+  /* ---- 语义色（涨红跌绿：费用上涨用红，下降用绿） ---- */
+  --sdb-success: oklch(60% 0.13 150); /* 跌绿 */
+  --sdb-warning: oklch(74% 0.13 78); /* 琥珀 */
+  --sdb-danger: oklch(58% 0.17 27); /* 涨红 */
+
+  /* ---- 圆角（圆润亲和） ---- */
+  --sdb-radius: 18px; /* 卡片 */
+  --sdb-radius-lg: 24px; /* 大卡/弹层 */
+  --sdb-radius-sm: 12px; /* 内嵌块 */
+  --sdb-radius-pill: 999px; /* 按钮/芯片 */
+
+  /* ---- 阴影（暖调柔影，按 elevation 分级） ---- */
+  --sdb-shadow-sm: 0 2px 8px oklch(45% 0.13 45 / 0.1);
+  --sdb-shadow: 0 8px 24px oklch(45% 0.13 45 / 0.12);
+  --sdb-shadow-lg: 0 16px 40px oklch(45% 0.13 45 / 0.16);
+
+  /* ---- 间距（4pt 刻度，命名语义化） ---- */
+  --sdb-space-1: 4px;
+  --sdb-space-2: 8px;
+  --sdb-space-3: 12px;
+  --sdb-space-4: 16px;
+  --sdb-space-5: 24px;
+  --sdb-space-6: 32px;
+  --sdb-space-7: 48px;
+  --sdb-space-8: 64px;
+  --sdb-gap: 12px; /* 既有别名：卡片/栅格间距 */
+  --sdb-pad: 16px; /* 既有别名：卡片内边距 */
+
+  /* ---- 字号（模块化比例 ~1.25，固定 rem 适配 App UI） ---- */
+  --sdb-text-xs: 0.75rem;
+  --sdb-text-sm: 0.875rem;
+  --sdb-text-base: 1rem;
+  --sdb-text-lg: 1.125rem;
+  --sdb-text-xl: 1.375rem;
+  --sdb-text-2xl: clamp(1.75rem, 5vw, 2.5rem); /* hero 标题/大数字 */
+
+  /* ---- 字体（圆体系统栈零加载；手写体仅 hero 数字渐进增强） ---- */
+  --sdb-font-rounded: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei',
+    'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  --sdb-font-hand: 'Caveat', var(--sdb-font-rounded);
+
+  /* ---- 动效（仅 transform/opacity；指数缓出） ---- */
+  --sdb-ease-out: cubic-bezier(0.16, 1, 0.3, 1); /* expo out */
+  --sdb-ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --sdb-dur-fast: 140ms;
+  --sdb-dur: 260ms;
+  --sdb-dur-slow: 420ms;
+
+  /* ---- 布局（既有别名保持） ---- */
+  --sdb-maxw: 480px; /* 移动端主列宽 */
+  --sdb-header-h: 54px;
+  /* 桌面优先布局（≥768px 侧栏出现，内容区按断点分级加宽） */
+  --sdb-sidebar-w: 232px; /* 桌面侧栏宽度（品牌区 + 导航 pill） */
+  --sdb-maxw-md: 840px; /* 768–1023px 平板内容宽 */
+  --sdb-maxw-lg: 1200px; /* ≥1024px 桌面内容宽（大屏网格基线） */
+
+  /* ---- 纸纹底噪（手作质感，极轻；深/浅共用，深色调降透明度） ---- */
+  --sdb-paper: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+
+  /* ---- Vant 主题覆盖（接入同一套语义色，圆角对齐） ---- */
+  --van-primary: var(--sdb-primary);
+  --van-success: var(--sdb-success);
+  --van-warning: var(--sdb-warning);
+  --van-danger: var(--sdb-danger);
+  --van-text-color: var(--sdb-text);
+  --van-text-color-2: var(--sdb-text-secondary);
+  --van-background: var(--sdb-bg);
+  --van-background-2: var(--sdb-surface-2);
+  --van-border-radius: var(--sdb-radius);
+}

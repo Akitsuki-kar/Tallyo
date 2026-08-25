@@ -1,0 +1,270 @@
+/* =========================================================================
+ * Vant 控件深度定制（有机手作感）
+ * 全局生效（非 scoped），在 main.ts 中于 `vant/lib/index.css` 之后引入，
+ * 因此同等特异度的规则会覆盖 Vant 默认样式。
+ * 仅做「视觉统一」：圆角 / 纸面 / 暖色 / 按压反馈，不改变交互语义。
+ * 配色全部来自 variables.css 的 --sdb-*，深浅主题自动适配。
+ * ========================================================================= */
+
+:root {
+  /* ---------- 按钮：pill 圆角 + 暖色 ---------- */
+  --van-button-default-color: var(--sdb-text);
+  --van-button-default-background: var(--sdb-surface);
+  --van-button-default-border-color: var(--sdb-border);
+  --van-button-primary-color: var(--sdb-on-primary);
+  --van-button-primary-background: var(--sdb-primary);
+  --van-button-primary-border-color: var(--sdb-primary);
+  --van-button-success-color: var(--sdb-on-semantic);
+  --van-button-success-background: var(--sdb-success);
+  --van-button-success-border-color: var(--sdb-success);
+  --van-button-danger-color: var(--sdb-on-semantic);
+  --van-button-danger-background: var(--sdb-danger);
+  --van-button-danger-border-color: var(--sdb-danger);
+  --van-button-warning-color: var(--sdb-on-semantic);
+  --van-button-warning-background: var(--sdb-warning);
+  --van-button-warning-border-color: var(--sdb-warning);
+  --van-button-active-opacity: 1; /* 按压反馈由下方结构规则接管 */
+  --van-button-border-radius: var(--sdb-radius-pill);
+  --van-button-round-border-radius: var(--sdb-radius-pill);
+  --van-button-mini-min-width: 56px;
+  --van-button-mini-height: 28px;
+  --van-button-small-min-width: 64px;
+  --van-button-small-height: 36px;
+  --van-button-default-height: 44px;
+  --van-button-default-font-size: 16px;
+
+  /* ---------- 单元格 / 分组（inset 纸卡） ---------- */
+  --van-cell-background: var(--sdb-surface);
+  --van-cell-text-color: var(--sdb-text);
+  --van-cell-value-color: var(--sdb-text);
+  --van-cell-label-color: var(--sdb-text-secondary);
+  --van-cell-group-inset-padding: 0;
+  --van-cell-vertical-padding: 14px;
+  --van-cell-horizontal-padding: 16px;
+  --van-cell-line-height: 24px;
+
+  /* ---------- 输入框（van-field） ---------- */
+  --van-field-label-color: var(--sdb-text-secondary);
+  --van-field-label-width: 5.5em;
+  --van-field-label-margin-right: 12px;
+  --van-field-input-text-color: var(--sdb-text);
+  --van-field-placeholder-text-color: var(--sdb-text-tertiary);
+  --van-field-error-text-color: var(--sdb-danger);
+  --van-field-icon-size: 18px;
+  --van-field-right-icon-color: var(--sdb-text-secondary);
+
+  /* ---------- 开关 ---------- */
+  --van-switch-on-background: var(--sdb-primary);
+  --van-switch-node-size: 22px;
+  --van-switch-width: 44px;
+  --van-switch-height: 26px;
+
+  /* ---------- 标签页（筛选条） ---------- */
+  --van-tab-text-color: var(--sdb-text-secondary);
+  --van-tab-active-text-color: var(--sdb-primary);
+  --van-tab-font-size: 15px;
+  --van-tab-line-height: 24px;
+  --van-tabs-default-color: var(--sdb-primary);
+  --van-tabs-nav-background: transparent;
+  --van-tabs-bottom-bar-color: var(--sdb-primary);
+  --van-tabs-bottom-bar-height: 3px;
+  --van-tabs-bottom-bar-width: 24px;
+
+  /* ---------- 弹层（底部圆角纸卡） ---------- */
+  --van-popup-background: var(--sdb-surface);
+  --van-popup-round-border-radius: var(--sdb-radius-lg);
+
+  /* ---------- 动作面板 ---------- */
+  --van-action-sheet-background: var(--sdb-surface);
+  --van-action-sheet-item-background: var(--sdb-surface);
+  --van-action-sheet-item-text-color: var(--sdb-text);
+  --van-action-sheet-item-font-size: 16px;
+  --van-action-sheet-item-active-color: var(--sdb-primary);
+  --van-action-sheet-cancel-text-color: var(--sdb-text-secondary);
+  --van-action-sheet-cancel-background: var(--sdb-surface-2);
+  --van-action-sheet-description-color: var(--sdb-text-secondary);
+  --van-action-sheet-description-font-size: 13px;
+
+  /* ---------- 对话框 ---------- */
+  --van-dialog-background: var(--sdb-surface);
+  --van-dialog-border-radius: var(--sdb-radius);
+  --van-dialog-width: 320px;
+  --van-dialog-message-text-color: var(--sdb-text-secondary);
+  --van-dialog-message-font-size: 14px;
+  --van-dialog-message-line-height: 1.6;
+  --van-dialog-has-title-message-padding-top: 20px;
+  --van-dialog-confirm-button-text-color: var(--sdb-primary);
+  --van-dialog-cancel-button-text-color: var(--sdb-text-secondary);
+  --van-dialog-header-font-weight: 700;
+  --van-dialog-header-font-size: 18px;
+
+  /* ---------- 单选 ---------- */
+  --van-radio-size: 19px;
+  --van-radio-checked-icon-color: var(--sdb-primary);
+  --van-radio-label-color: var(--sdb-text);
+  --van-radio-label-font-size: 15px;
+
+  /* ---------- 标签 ---------- */
+  --van-tag-primary-color: var(--sdb-on-primary);
+  --van-tag-primary-background: var(--sdb-primary);
+  --van-tag-default-color: var(--sdb-text-secondary);
+  --van-tag-default-background: var(--sdb-surface-2);
+  --van-tag-padding: 2px 8px;
+
+  /* ---------- 加载 ---------- */
+  --van-loading-spinner-color: var(--sdb-primary);
+
+  /* ---------- 选择器（日期 / 时间） ---------- */
+  --van-picker-background: var(--sdb-surface);
+  --van-picker-option-text-color: var(--sdb-text);
+  --van-picker-option-selected-text-color: var(--sdb-primary);
+  --van-picker-option-font-size: 16px;
+  --van-picker-toolbar-height: 46px;
+  --van-picker-toolbar-confirm-action-color: var(--sdb-primary);
+  --van-picker-toolbar-cancel-action-color: var(--sdb-text-secondary);
+  --van-picker-title-color: var(--sdb-text);
+  --van-picker-title-font-size: 15px;
+}
+
+/* ====================== 结构级深度定制 ====================== */
+
+/* 按钮：圆角 pill + 圆体 + 按压回弹 + 暖色柔影 */
+.van-button {
+  border-radius: var(--sdb-radius-pill);
+  font-family: var(--sdb-font-rounded);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  transition:
+    transform var(--sdb-dur-fast) var(--sdb-ease-out-quart),
+    box-shadow var(--sdb-dur) var(--sdb-ease-out),
+    background-color var(--sdb-dur) var(--sdb-ease-out),
+    border-color var(--sdb-dur) var(--sdb-ease-out),
+    color var(--sdb-dur) var(--sdb-ease-out);
+}
+.van-button--primary:not(.van-button--plain) {
+  box-shadow: var(--sdb-shadow);
+}
+.van-button:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: var(--sdb-shadow-sm);
+}
+.van-button--block {
+  width: 100%;
+}
+/* 次要按钮（plain）：暖色描边 + 轻触底 */
+.van-button--plain.van-button--primary {
+  background: transparent;
+  border-color: var(--sdb-primary);
+  color: var(--sdb-primary);
+}
+.van-button--plain.van-button--primary:active {
+  background: var(--sdb-surface-2);
+}
+
+/* 单元格分组 inset：纸卡 + 细边 + 圆角 + 纸纹 */
+.van-cell-group--inset {
+  background-color: var(--sdb-surface);
+  background-image: var(--sdb-paper);
+  background-repeat: repeat;
+  border: 1px solid var(--sdb-border);
+  border-radius: var(--sdb-radius);
+  box-shadow: var(--sdb-shadow);
+  overflow: hidden;
+  margin: 8px 0 16px;
+}
+.van-cell-group--inset .van-cell:last-child::after {
+  display: none;
+}
+.van-cell {
+  background: transparent;
+}
+.van-cell__title {
+  font-weight: 500;
+}
+
+/* 输入框：纸感、圆体；聚焦时暖色下划线提示 */
+.van-field {
+  background: transparent;
+}
+.van-field__control {
+  font-family: var(--sdb-font-rounded);
+}
+.van-field__control::placeholder {
+  color: var(--sdb-text-tertiary);
+}
+.van-field__label {
+  color: var(--sdb-text-secondary);
+}
+
+/* 开关：圆润 + 更大拇指 + 暖色投影 */
+.van-switch {
+  border-radius: 999px;
+}
+.van-switch__node {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
+}
+
+/* 标签页：暖色墨条（渐变） + 圆角 */
+.van-tabs__line {
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--sdb-primary), var(--sdb-accent));
+}
+.van-tab--active {
+  font-weight: 700;
+}
+
+/* 弹层：纸面 */
+.van-popup {
+  background-image: var(--sdb-paper);
+  background-repeat: repeat;
+}
+
+/* 动作面板项：按压暖底 */
+.van-action-sheet__item:active {
+  background: var(--sdb-surface-2);
+}
+.van-action-sheet__item--active {
+  font-weight: 700;
+  color: var(--sdb-primary);
+}
+
+/* 对话框：纸面 + 标题字重 */
+.van-dialog {
+  background-color: var(--sdb-surface);
+  background-image: var(--sdb-paper);
+  background-repeat: repeat;
+}
+.van-dialog__header {
+  font-weight: 700;
+  color: var(--sdb-text);
+}
+.van-dialog__confirm {
+  font-weight: 600;
+}
+
+/* 单选：图标放大 + 暖色 */
+.van-radio__icon {
+  font-size: var(--van-radio-size);
+}
+
+/* 日期 / 时间选择器：选中列暖色高亮 */
+.van-picker-column__item--selected {
+  font-weight: 700;
+}
+
+/* 标签圆角统一 */
+.van-tag {
+  border-radius: 999px;
+}
+
+/* 加载图标默认暖色（已在变量层设色，这里确保尺寸统一） */
+.van-loading {
+  vertical-align: middle;
+}
+
+/* 尊重减弱动效偏好：关闭按钮按压位移 */
+@media (prefers-reduced-motion: reduce) {
+  .van-button:active:not(:disabled) {
+    transform: none;
+  }
+}

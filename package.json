@@ -1,0 +1,33 @@
+{
+  "name": "shuidian-dongzhang",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "gen:icons": "node scripts/gen-icons.mjs",
+    "test:pure": "esbuild scripts/test-pure-functions.ts --bundle --platform=node --format=esm --alias:@=./src --outfile=node_modules/.cache/_test-out.mjs && node node_modules/.cache/_test-out.mjs"
+  },
+  "dependencies": {
+    "dayjs": "^1.11.10",
+    "echarts": "^5.5.0",
+    "html2canvas": "^1.4.1",
+    "idb": "^8.0.0",
+    "jspdf": "^2.5.2",
+    "pinia": "^2.1.7",
+    "vant": "^4.8.0",
+    "vue": "^3.4.0",
+    "vue-router": "^4.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.0",
+    "@vitejs/plugin-vue": "^5.0.0",
+    "typescript": "^5.4.0",
+    "vite": "^5.2.0",
+    "vite-plugin-pwa": "^1.3.0",
+    "vue-tsc": "^2.0.0"
+  }
+}

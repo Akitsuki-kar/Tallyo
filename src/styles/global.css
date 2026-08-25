@@ -1,0 +1,263 @@
+/* =========================================================================
+ * 全局基础样式（手作感基底）
+ * 纸纹底 · 便签卡片 · 圆体按钮 · 焦点环 · 进入动效 · reduced-motion 兜底
+ * 依赖 variables.css 中的 --sdb-* token。
+ * ========================================================================= */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--sdb-font-rounded);
+  /* 纸底：纯色 + 极轻噪点叠层 */
+  background-color: var(--sdb-bg);
+  background-image: var(--sdb-paper);
+  background-repeat: repeat;
+  color: var(--sdb-text);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  transition:
+    background-color 0.3s var(--sdb-ease-out),
+    color 0.3s var(--sdb-ease-out);
+}
+
+#app {
+  min-height: 100vh;
+}
+
+a {
+  color: var(--sdb-primary);
+  text-decoration: none;
+}
+
+/* 统一焦点环（键盘可达性，暖橘） */
+:focus-visible {
+  outline: 2px solid var(--sdb-primary);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* ---------------- 通用卡片：便签纸感 ---------------- */
+.sdb-card {
+  background: var(--sdb-surface);
+  background-image: var(--sdb-paper);
+  background-repeat: repeat;
+  border: 1px solid var(--sdb-border);
+  border-radius: var(--sdb-radius);
+  box-shadow: var(--sdb-shadow);
+  padding: var(--sdb-pad);
+}
+
+/* ---------------- 页面标题（圆体 + 暖色小强调） ---------------- */
+.sdb-page-title {
+  font-size: var(--sdb-text-xl);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  margin: 4px 0 var(--sdb-space-5);
+  color: var(--sdb-text);
+}
+.sdb-page-title::after {
+  content: '';
+  display: block;
+  width: 36px;
+  height: 4px;
+  margin-top: 6px;
+  border-radius: var(--sdb-radius-pill);
+  background: linear-gradient(90deg, var(--sdb-primary), var(--sdb-accent));
+}
+
+/* ---------------- 圆体按钮基类（pill，带按压反馈） ---------------- */
+.sdb-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px; /* 触控目标 */
+  padding: 0 20px;
+  border: 1px solid transparent;
+  border-radius: var(--sdb-radius-pill);
+  font-family: var(--sdb-font-rounded);
+  font-size: var(--sdb-text-base);
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    transform var(--sdb-dur-fast) var(--sdb-ease-out-quart),
+    box-shadow var(--sdb-dur) var(--sdb-ease-out),
+    background-color var(--sdb-dur) var(--sdb-ease-out),
+    border-color var(--sdb-dur) var(--sdb-ease-out);
+}
+.sdb-btn:active {
+  transform: translateY(2px);
+  box-shadow: var(--sdb-shadow-sm);
+}
+.sdb-btn--primary {
+  background: var(--sdb-primary);
+  color: var(--sdb-on-primary);
+  box-shadow: var(--sdb-shadow);
+}
+.sdb-btn--primary:hover {
+  background: var(--sdb-primary-dark);
+  transform: translateY(-1px);
+}
+.sdb-btn--ghost {
+  background: var(--sdb-surface);
+  border-color: var(--sdb-border);
+  color: var(--sdb-text);
+}
+.sdb-btn--ghost:hover {
+  border-color: var(--sdb-primary);
+  color: var(--sdb-primary);
+}
+.sdb-btn--block {
+  width: 100%;
+}
+
+/* ---------------- 进入动效（错落淡入上浮） ---------------- */
+@keyframes sdb-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.sdb-rise {
+  animation: sdb-rise var(--sdb-dur-slow) var(--sdb-ease-out) both;
+  animation-delay: calc(var(--sdb-stagger, 0) * 60ms);
+}
+
+/* ---------------- 主内容区（移动端优先，底部留白给 TabBar） ---------------- */
+.sdb-main {
+  width: 100%;
+  max-width: var(--sdb-maxw);
+  margin: 0 auto;
+  padding: var(--sdb-space-3) var(--sdb-space-3) calc(var(--sdb-header-h) + 56px);
+}
+
+/* ---------------- 响应式：桌面优先重构 ----------------
+ * 断点分级（内容驱动，非盲目套通用值）：
+ *  ≥768px  平板：侧栏导航出现，内容加宽到 840px，双列网格
+ *  ≥1024px 桌面：内容加宽到 1200px，三/四列网格、设置双栏
+ * 移动端样式完全不受影响。 */
+@media (min-width: 768px) {
+  .sdb-shell {
+    padding-left: var(--sdb-sidebar-w); /* 给固定侧栏让位 */
+  }
+  .sdb-main {
+    max-width: var(--sdb-maxw-md);
+    padding: var(--sdb-space-5) var(--sdb-space-5) var(--sdb-space-7);
+  }
+  .sdb-page-title {
+    font-size: var(--sdb-text-2xl); /* 桌面标题放大，层级更清晰 */
+  }
+}
+@media (min-width: 1024px) {
+  .sdb-main {
+    max-width: var(--sdb-maxw-lg);
+  }
+}
+
+/* ---------------- 通用响应式网格 ----------------
+ * grid-2：既有别名（移动单列 → ≥768 双列）
+ * grid-3 / grid-4：桌面增强列（小屏自动降列，不隐藏内容）
+ * grid-cards：卡片墙（auto-fill，容器驱动，列数随宽度自适应） */
+.sdb-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--sdb-gap);
+}
+@media (min-width: 768px) {
+  .sdb-grid-2 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.sdb-grid-3 {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--sdb-gap);
+}
+@media (min-width: 768px) {
+  .sdb-grid-3 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (min-width: 1024px) {
+  .sdb-grid-3 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.sdb-grid-4 {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--sdb-gap);
+}
+@media (min-width: 1024px) {
+  .sdb-grid-4 {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* 卡片墙：账单/读数等列表在桌面铺开，minmax 保证卡片不过窄 */
+.sdb-grid-cards {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--sdb-space-3);
+}
+@media (min-width: 768px) {
+  .sdb-grid-cards {
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: var(--sdb-space-4);
+  }
+}
+
+/* 双栏分区（预算页等「进度 + 设置」并排；移动端上下堆叠） */
+.sdb-duo {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--sdb-space-3);
+  align-items: start;
+}
+@media (min-width: 1024px) {
+  .sdb-duo {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--sdb-space-4);
+  }
+}
+
+/* 设置页分组双栏（≥1024px 分组两列排布，减少长滚动） */
+.sdb-settings-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--sdb-space-3);
+}
+@media (min-width: 1024px) {
+  .sdb-settings-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--sdb-space-4);
+    align-items: start;
+  }
+}
+
+/* ---------------- 尊重减弱动效偏好 ---------------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

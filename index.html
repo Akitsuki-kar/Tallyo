@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#EF7A2E" />
+    <meta name="description" content="水电动账：离线优先的水电读数记录与账单生成 PWA" />
+    <!--
+      Content Security Policy
+      - default-src 'self'：默认仅加载同源资源
+      - script-src 'unsafe-inline'：Vite 开发模式注入的内联脚本需要（生产可考虑收紧为 nonce）
+      - style-src 'unsafe-inline'：Vue 运行时内联样式 + Vant 组件样式需要
+      - font-src data：base64 内联字体兜底
+      - img-src blob/data：html2canvas 截图 + ECharts canvas 导出需要
+      - connect-src 'self'：同步走同源反代（/dav/），不直连外部 WebDAV；
+        若需跨域同步请在反代同域部署并放宽此处（详见 docs/webdav-setup.md）
+      - object-src 'none'：禁止 Flash / 插件
+      - base-uri 'self'：防止 base 标签注入
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; connect-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self';"
+    />
+    <title>水电动账</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

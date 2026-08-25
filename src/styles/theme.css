@@ -1,0 +1,42 @@
+/* =========================================================================
+ * 深色主题（[data-theme="dark"]）—— 暖棕夜读
+ * 深度靠「表面提亮」而非阴影；中性带暖意；主色略提亮降饱和。
+ * 详见 .impeccable.md 的 Aesthetic Direction。
+ * ========================================================================= */
+[data-theme='dark'] {
+  --sdb-primary: oklch(72% 0.13 47);
+  --sdb-primary-light: oklch(83% 0.1 52);
+  --sdb-primary-dark: oklch(63% 0.13 45);
+  --sdb-on-primary: oklch(22% 0.02 50);
+  --sdb-accent: oklch(85% 0.11 88);
+
+  --sdb-bg: oklch(21% 0.012 50); /* 暖深棕（非纯黑） */
+  --sdb-surface: oklch(26% 0.012 50);
+  --sdb-surface-2: oklch(31% 0.014 50);
+  --sdb-border: oklch(38% 0.012 60);
+  --sdb-text: oklch(93% 0.008 80);
+  --sdb-text-secondary: oklch(74% 0.012 60);
+  --sdb-text-tertiary: oklch(60% 0.012 60);
+  --sdb-on-semantic: oklch(99% 0.008 85);
+
+  --sdb-success: oklch(68% 0.12 150);
+  --sdb-warning: oklch(80% 0.12 78);
+  --sdb-danger: oklch(66% 0.16 27);
+
+  /* 深色：用更深柔影 + 提亮表面表达层次 */
+  --sdb-shadow-sm: 0 2px 8px oklch(12% 0.02 40 / 0.4);
+  --sdb-shadow: 0 8px 24px oklch(12% 0.02 40 / 0.45);
+  --sdb-shadow-lg: 0 16px 40px oklch(10% 0.02 40 / 0.5);
+
+  /* 纸纹在深色下更隐（降透明度） */
+  --sdb-paper: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.025'/%3E%3C/svg%3E");
+
+  --van-primary: var(--sdb-primary);
+  --van-success: var(--sdb-success);
+  --van-warning: var(--sdb-warning);
+  --van-danger: var(--sdb-danger);
+  --van-text-color: var(--sdb-text);
+  --van-text-color-2: var(--sdb-text-secondary);
+  --van-background: var(--sdb-bg);
+  --van-background-2: var(--sdb-surface-2);
+}
