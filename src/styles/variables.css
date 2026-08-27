@@ -85,9 +85,10 @@
   --sdb-text-xl: 1.375rem;
   --sdb-text-2xl: clamp(1.75rem, 5vw, 2.5rem); /* hero 标题/大数字 */
 
-  /* ---- 字体（圆体系统栈零加载；手写体仅 hero 数字渐进增强） ---- */
-  --sdb-font-rounded: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei',
-    'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  /* ---- 字体（中文正文=霞鹜文楷轻便版自托管分片；数字大字=手写 Caveat；系统栈兜底生僻字） ---- */
+  --sdb-font-rounded: 'LXGW WenKai Lite', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial,
+    sans-serif;
   --sdb-font-hand: 'Caveat', var(--sdb-font-rounded);
 
   /* ---- 动效（仅 transform/opacity；指数缓出） ---- */

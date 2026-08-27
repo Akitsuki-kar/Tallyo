@@ -196,7 +196,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="sdb-shell">
-    <AppHeader title="水电动账">
+    <AppHeader>
       <template #actions>
         <button
           class="sdb-header__btn"
@@ -261,12 +261,15 @@ onBeforeUnmount(() => {
   height: 100vh;
   width: 100vw;
   overflow: hidden;
+  /* 壳固定视口高、自身不滚动；改为 flex 列：顶栏(固定) + 主内容区(可滚动) + 底栏(fixed) */
+  display: flex;
+  flex-direction: column;
 }
 
 .sdb-header__btn {
   background: transparent;
   border: none;
-  color: var(--sdb-on-primary);
+  color: var(--sdb-text);
   font-size: 20px;
   line-height: 1;
   cursor: pointer;

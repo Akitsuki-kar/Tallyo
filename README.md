@@ -178,6 +178,57 @@ npm run tauri:build    # 生成对应平台安装包
 
 ---
 
+## 🙏 开源致谢
+
+水电动账站在巨人的肩膀上。以下开源项目让这个记账本成为可能（前端运行时依赖全部本地自托管 / 打包进产物，符合各项目许可；App 内设置页「关于 → 鸣谢」可直达各项目主页）。
+
+### 运行时依赖
+
+| 项目 | 用途 | 许可证 | 主页 |
+| --- | --- | --- | --- |
+| Vue 3 | 前端框架 | MIT | <https://vuejs.org> |
+| Vue Router | 页面路由 | MIT | <https://router.vuejs.org> |
+| Pinia | 状态管理 | MIT | <https://pinia.vuejs.org> |
+| Vant 4 | UI 组件库（深度定制为手作美学） | MIT | <https://vant-ui.github.io/vant> |
+| ECharts 5 | 图表可视化（按需引入） | Apache-2.0 | <https://echarts.apache.org> |
+| idb | IndexedDB 封装 | ISC | <https://github.com/jakearchibald/idb> |
+| dayjs | 日期处理 | MIT | <https://day.js.org> |
+| html2canvas | 账单截图（PDF 导出前置） | MIT | <https://html2canvas.hertzen.com> |
+| jsPDF | PDF 导出 | MIT | <https://github.com/parallax/jsPDF> |
+
+### 构建与工程化
+
+| 项目 | 用途 | 许可证 | 主页 |
+| --- | --- | --- | --- |
+| Vite | 构建工具 | MIT | <https://vitejs.dev> |
+| TypeScript | 类型系统 | Apache-2.0 | <https://www.typescriptlang.org> |
+| @vitejs/plugin-vue | Vite 的 Vue 单文件组件插件 | MIT | <https://github.com/vitejs/vite-plugin-vue> |
+| vite-plugin-pwa | PWA 离线与安装能力 | MIT | <https://vite-pwa-org.netlify.app> |
+| vue-tsc | Vue 类型检查 | MIT | <https://github.com/vuejs/language-tools> |
+| cross-env | 跨平台环境变量（TAURI_BUILD 开关） | MIT | <https://github.com/kentcdodds/cross-env> |
+| cn-font-split | 中文字体切分（构建期，产出 woff2 分片） | Apache-2.0 | <https://github.com/KonghaYao/cn-font-split> |
+
+### 原生壳（Tauri 2）
+
+| 项目 | 用途 | 许可证 | 主页 |
+| --- | --- | --- | --- |
+| Tauri 2 | 桌面 / 移动原生壳 | MIT / Apache-2.0 | <https://tauri.app> |
+| tauri-plugin-dialog | 系统保存对话框（PDF 导出） | MIT / Apache-2.0 | <https://github.com/tauri-apps/plugins-workspace> |
+| tauri-plugin-fs | 文件系统访问 | MIT / Apache-2.0 | <https://github.com/tauri-apps/plugins-workspace> |
+| tauri-plugin-keyring | 系统密钥环（Keychain / Credential Manager） | MIT | <https://github.com/HuakunShen/tauri-plugin-keyring> |
+| serde / serde_json | Rust 序列化 | MIT / Apache-2.0 | <https://serde.rs> |
+
+### 字体（SIL OFL 1.1）
+
+| 字体 | 用途 | 许可证 | 主页 |
+| --- | --- | --- | --- |
+| 霞鹜文楷轻便版（LXGW WenKai Lite） | 中文正文楷体（本地自托管分片） | SIL OFL 1.1 | <https://github.com/lxgw/LxgwWenKai-Lite> |
+| Caveat | 手写数字（hero 大数字） | SIL OFL 1.1 | <https://github.com/googlefonts/caveat> |
+
+> 字体均依 SIL Open Font License 1.1 许可使用与再分发，版权归原作者所有。
+
+---
+
 ## 📄 许可
 
 本项目基于 **Apache License 2.0** 开源（详见仓库根目录 [`LICENSE`](LICENSE)）。

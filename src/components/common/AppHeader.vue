@@ -11,7 +11,7 @@ const props = withDefaults(
     showBack?: boolean;
   }>(),
   {
-    title: '水电动账',
+    title: '',
     showBack: false,
   },
 );
@@ -51,7 +51,11 @@ async function winAction(kind: 'min' | 'max' | 'close'): Promise<void> {
 <template>
   <header class="sdb-header" :class="{ 'sdb-header--titlebar': showWindowControls }">
     <button v-if="showBack" class="sdb-header__back" type="button" aria-label="返回" @click="onBack">‹</button>
-    <h1 class="sdb-header__title" data-tauri-drag-region>{{ props.title }}</h1>
+    <h1
+      v-if="props.title || showWindowControls"
+      class="sdb-header__title"
+      :data-tauri-drag-region="showWindowControls ? '' : undefined"
+    >{{ props.title }}</h1>
     <div class="sdb-header__actions">
       <slot name="actions" />
       <template v-if="showWindowControls">
@@ -77,13 +81,13 @@ async function winAction(kind: 'min' | 'max' | 'close'): Promise<void> {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: var(--sdb-header-h);
+  min-height: var(--sdb-header-h);
   padding: 0 16px;
-  /* 暖橘柔和渐变 + 底部圆角，像一张便签顶条 */
-  background: linear-gradient(135deg, var(--sdb-primary), var(--sdb-primary-dark));
-  color: var(--sdb-on-primary);
-  border-radius: 0 0 var(--sdb-radius) var(--sdb-radius);
-  box-shadow: var(--sdb-shadow);
+  flex: none; /* flex 列布局中顶栏固定不伸缩，主内容区独占剩余高度滚动 */
+  /* 去掉常驻橙色品牌栏：顶栏改为透明极简条，仅承载主题按钮 / 桌面窗口控制，
+   * 不再显示「水电动账」品牌文字；各页面用自身的 .sdb-page-title 自标题。 */
+  background: transparent;
+  color: var(--sdb-text);
 }
 .sdb-header__title {
   font-size: 19px;
@@ -91,11 +95,12 @@ async function winAction(kind: 'min' | 'max' | 'close'): Promise<void> {
   letter-spacing: 0.02em;
   margin: 0;
   flex: 1;
+  color: var(--sdb-text);
 }
 .sdb-header__back {
   background: transparent;
   border: none;
-  color: var(--sdb-on-primary);
+  color: var(--sdb-text);
   font-size: 26px;
   line-height: 1;
   cursor: pointer;
@@ -129,7 +134,7 @@ async function winAction(kind: 'min' | 'max' | 'close'): Promise<void> {
   max-width: none;
   border-radius: 0;
 }
-/* 原生窗口控制按钮（仅桌面 Tauri 渲染） */
+/* 原生窗口控制按钮（仅桌面 Tauri 渲染；透明顶栏下用文字色，hover 用次级表面） */
 .sdb-winbtn {
   display: inline-flex;
   align-items: center;
@@ -140,12 +145,12 @@ async function winAction(kind: 'min' | 'max' | 'close'): Promise<void> {
   border: none;
   border-radius: 8px;
   background: transparent;
-  color: var(--sdb-on-primary);
+  color: var(--sdb-text-secondary);
   cursor: pointer;
   transition: background-color var(--sdb-dur) var(--sdb-ease-out);
 }
 .sdb-winbtn:hover {
-  background: rgba(255, 255, 255, 0.18);
+  background: var(--sdb-surface-2);
 }
 .sdb-winbtn--close:hover {
   background: #e5484d;

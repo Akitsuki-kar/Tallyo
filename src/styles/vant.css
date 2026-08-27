@@ -172,6 +172,32 @@
   overflow: hidden;
   margin: 8px 0 16px;
 }
+
+/* 分组小标题（外观 / 行为 / 账单 …）：手作风分区标识
+ * van-cell-group 的 title 渲染为 .van-cell-group__title，Vant 默认仅灰字无风格；
+ * 这里补上手作感：暖色竖条 + 圆体加粗，与 .sdb-page-title 的强调条呼应。
+ * 配色走 --sdb-* token，深浅主题自动适配。 */
+.van-cell-group__title {
+  display: flex;
+  align-items: center;
+  gap: var(--sdb-space-2);
+  padding: var(--sdb-space-4) var(--sdb-space-4) var(--sdb-space-2);
+  margin: 0;
+  font-family: var(--sdb-font-rounded);
+  font-size: var(--sdb-text-sm);
+  font-weight: 700;
+  line-height: 1.4;
+  letter-spacing: 0.06em;
+  color: var(--sdb-text-secondary);
+}
+.van-cell-group__title::before {
+  content: '';
+  flex: none;
+  width: 4px;
+  height: 15px;
+  border-radius: var(--sdb-radius-pill);
+  background: linear-gradient(180deg, var(--sdb-primary), var(--sdb-accent));
+}
 .van-cell-group--inset .van-cell:last-child::after {
   display: none;
 }

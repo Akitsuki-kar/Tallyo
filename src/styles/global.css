@@ -136,12 +136,44 @@ a {
   animation-delay: calc(var(--sdb-stagger, 0) * 60ms);
 }
 
-/* ---------------- 主内容区（移动端优先，底部留白给 TabBar） ---------------- */
+/* ---------------- 主内容区（移动端优先，底部留白给 TabBar） ----------------
+ * 作为壳内唯一的滚动容器：壳高固定(100vh)且 overflow:hidden，
+ * 主内容区需 flex:1 占满剩余高度 + min-height:0 允许收缩 + overflow-y:auto 才能滚动。
+ * 这样账单/设置等较长页面只在顶栏与底栏之间正常滚动，不会被壳裁掉。 */
 .sdb-main {
   width: 100%;
   max-width: var(--sdb-maxw);
   margin: 0 auto;
   padding: var(--sdb-space-3) var(--sdb-space-3) calc(var(--sdb-header-h) + 56px);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+/* ---------------- 全局滚动条（手作风：细圆角、暖色柔条） ----------------
+ * .sdb-main 现为壳内唯一滚动容器；弹层 / 对话框内列表也需统一风格。
+ * WebKit 内核（WebView2 / Edge / Android Chromium）：::-webkit-scrollbar 系列；
+ * Firefox：scrollbar-width + scrollbar-color。配色走 --sdb-* token，深浅主题自适应。 */
+* {
+  scrollbar-width: thin; /* Firefox：细条 */
+  scrollbar-color: var(--sdb-text-tertiary) transparent; /* 滑块 / 轨道 */
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-color: var(--sdb-text-tertiary);
+  border-radius: var(--sdb-radius-pill);
+  border: 2px solid var(--sdb-bg); /* 留白环：细圆角观感，不贴内容 */
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--sdb-primary);
 }
 
 /* ---------------- 响应式：桌面优先重构 ----------------

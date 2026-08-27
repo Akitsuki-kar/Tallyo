@@ -25,6 +25,7 @@ import type { DefaultView, BillTemplateId, ThemeMode } from '@/types';
 import PriceSettingPanel from '@/components/settings/PriceSettingPanel.vue';
 import PremiseManager from '@/components/settings/PremiseManager.vue';
 import DeviceKeyBackup from '@/components/settings/DeviceKeyBackup.vue';
+import CreditsPopup from '@/components/settings/CreditsPopup.vue';
 import { eventBus, EVENTS } from '@/utils/eventBus';
 
 const router = useRouter();
@@ -39,6 +40,8 @@ const pricePanelRef = ref<InstanceType<typeof PriceSettingPanel> | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const exporting = ref(false);
 const importing = ref(false);
+// 开源致谢弹层显隐
+const showCredits = ref(false);
 
 // ---- 默认视图选择器 ----
 const showViewPicker = ref(false);
@@ -240,6 +243,7 @@ onMounted(async () => {
       <!-- 关于 -->
       <van-cell-group inset title="关于" class="sdb-settings-group">
         <van-cell title="版本" value="0.1.0" />
+        <van-cell title="鸣谢" value="开源项目" is-link @click="showCredits = true" />
         <van-cell title="新手引导" value="重看一遍" is-link @click="replayOnboarding" />
         <van-cell v-if="canInstall" title="安装到桌面" is-link @click="promptInstall" />
       </van-cell-group>
@@ -283,6 +287,9 @@ onMounted(async () => {
 
     <!-- 水电单价面板 -->
     <PriceSettingPanel ref="pricePanelRef" />
+
+    <!-- 开源致谢弹层 -->
+    <CreditsPopup v-model:show="showCredits" />
   </div>
 </template>
 
