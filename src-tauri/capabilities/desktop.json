@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "desktop-keyring",
+  "description": "桌面专属：把设备加密密钥存进系统 Keychain/Keystore。移动端不挂载 keyring 插件，故用 platforms 限定仅桌面生效。",
+  "platforms": ["linux", "macOS", "windows"],
+  "windows": ["main"],
+  "permissions": [
+    "keyring:allow-get-password",
+    "keyring:allow-set-password",
+    "keyring:allow-delete-password"
+  ]
+}

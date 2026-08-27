@@ -121,6 +121,8 @@ function finish(tour: boolean): void {
       <!-- 跳过入口（全程可见，尊重用户选择） -->
       <button class="onboard__skip" type="button" @click="finish(false)">跳过</button>
 
+      <!-- 内容容器：整体在视口内居中；仅在极端矮屏时内部滚动，避免页面出现滚动条 -->
+      <div class="onboard__inner">
       <!-- 进度点 -->
       <div class="onboard__dots" aria-hidden="true">
         <span
@@ -221,34 +223,50 @@ function finish(tour: boolean): void {
       <button class="sdb-btn sdb-btn--primary onboard__next" type="button" @click="onNext">
         {{ primaryLabel }}
       </button>
+      </div>
     </div>
   </Transition>
 </template>
 
 <style scoped>
 /* ---- 全屏沉浸层：纸面 + 暖色氛围光 ----
- * 居中用「首尾元素 auto margin」而非 justify-content:center：
- * 内容超出视口时 auto margin 归零、从顶部开始正常滚动，避免经典 flex
- * 居中溢出导致顶部被裁且滚不到的问题。 */
+ * 浮层自身 overflow:hidden 且不撑开文档流；内容统一收进 .onboard__inner，
+ * 由浮层 justify-content:center 在视口内整体居中。仅在极端矮屏、内容确实放不下时，
+ * .onboard__inner 内部滚动（滚动条已隐藏），绝不产生「页面级」滚动条。 */
 .onboard {
   position: fixed;
   inset: 0;
   z-index: 100;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: var(--sdb-space-5);
+  justify-content: center;
   padding: var(--sdb-space-5);
   background: var(--sdb-bg);
   background-image: var(--sdb-paper);
+  overflow: hidden;
+}
+/* 内容容器：限制最大高度，必要时内部滚动（滚动条隐藏，避免干扰沉浸感） */
+.onboard__inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sdb-space-5);
+  width: 100%;
+  max-width: 460px;
+  max-height: 100%;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;          /* Firefox */
+  -ms-overflow-style: none;       /* 旧 Edge */
+}
+.onboard__inner::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 .onboard__dots {
-  margin-top: auto; /* 有富余空间时把整组内容推向垂直居中 */
   flex: none;
 }
 .onboard__next {
-  margin-bottom: auto;
   flex: none;
 }
 /* 矮视口（横屏手机/小窗）：压缩间距与卡片内边距，尽量避免滚动 */
@@ -275,6 +293,42 @@ function finish(tour: boolean): void {
   }
   .onboard__next {
     min-width: 200px;
+  }
+}
+/* 极矮屏（小窗/横屏手机）：进一步压缩，确保内容始终不出现滚动条 */
+@media (max-height: 600px) {
+  .onboard {
+    gap: var(--sdb-space-3);
+    padding: var(--sdb-space-3);
+  }
+  .onboard__inner {
+    gap: var(--sdb-space-3);
+  }
+  .onboard__card {
+    padding: var(--sdb-space-4);
+  }
+  .onboard__card::before {
+    top: 10px;
+    left: 18px;
+    right: 18px;
+  }
+  .onboard__hero {
+    font-size: var(--sdb-text-xl);
+    margin-bottom: var(--sdb-space-1);
+  }
+  .onboard__tagline {
+    margin-bottom: var(--sdb-space-3);
+  }
+  .onboard__points li {
+    padding: 6px 12px;
+  }
+  .onboard__usage-icon {
+    width: 38px;
+    height: 38px;
+    font-size: 18px;
+  }
+  .onboard__usage-item {
+    padding: 8px 12px;
   }
 }
 .onboard__glow {

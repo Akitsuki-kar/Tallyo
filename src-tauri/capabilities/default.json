@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Tallyo 主窗口默认权限：核心运行 + 文件对话框（PDF 导出）+ 文件系统写入 + 系统密钥库（设备密钥）。",
+  "description": "Tallyo 主窗口默认权限（跨桌面与移动）：核心运行 + 文件对话框（PDF 导出）+ 文件系统写入。系统密钥库权限见 desktop-keyring.json（仅桌面）。",
   "windows": ["main"],
   "permissions": [
     "core:default",
@@ -16,9 +16,6 @@
         { "path": "$DESKTOP/**" },
         { "path": "$PICTURE/**" }
       ]
-    },
-    "keyring:allow-get-password",
-    "keyring:allow-set-password",
-    "keyring:allow-delete-password"
+    }
   ]
 }

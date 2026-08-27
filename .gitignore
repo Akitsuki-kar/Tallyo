@@ -20,6 +20,26 @@ vite.config.ts.timestamp-*.mjs
 # Rust / Tauri 构建产物（src-tauri）
 src-tauri/target/
 
+# Tauri 生成的安卓工程与 JSON Schema（由 tauri android init/build 重新生成，体积 ~189M，绝不入库）
+src-tauri/gen/
+
+# 安卓签名密钥（本地私有；已随 gen/ 忽略，此处显式保留以防规则变动导致误提交）
+src-tauri/gen/android/keystore.properties
+src-tauri/gen/android/*.jks
+
+# Gradle 构建产物（已随 gen/ 忽略，保留以防单独生成时漏网）
+src-tauri/gen/android/.gradle/
+src-tauri/gen/android/build/
+src-tauri/gen/android/app/build/
+
+# 生成的应用图标（由 npx tauri icon 从 icon.png 生成；icon.png 为源文件，保留入库）
+src-tauri/icons/*.ico
+src-tauri/icons/*.icns
+src-tauri/icons/*.png
+!src-tauri/icons/icon.png
+src-tauri/icons/android/
+src-tauri/icons/ios/
+
 
 # 编辑器 / OS
 .vscode/

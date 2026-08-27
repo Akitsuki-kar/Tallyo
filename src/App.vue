@@ -31,7 +31,9 @@ const settings = useSettingsStore();
 // 体验⑪：在线状态 + 待同步改动计数（横幅展示）
 const { online, pendingCount } = useSyncStatus();
 // 体验⑫：撤销条（删除操作后出现的 5 秒撤销）
-const undo = useUndo();
+// 注意：必须解构成顶层 ref，Vue 模板才会自动解包；若直接 v-if="undo.visible"，
+// 访问的是未解包的 ref 对象（恒为真），会导致撤销条误全局常驻显示。
+const { visible: undoVisible, label: undoLabel, run: undoRun } = useUndo();
 // 高优①：持久化存储授权状态（未授权时提示用户手动开启）
 const { status: storageStatus } = useStoragePersistence();
 
@@ -225,10 +227,10 @@ onBeforeUnmount(() => {
 
     <AppTabBar />
 
-    <!-- 体验⑫：删除操作后的撤销条 -->
-    <div v-if="undo.visible" class="sdb-undo-snackbar" role="status">
-      <span class="sdb-undo-snackbar__text">{{ undo.label }}</span>
-      <button class="sdb-undo-snackbar__btn" type="button" @click="undo.run">撤销</button>
+    <!-- 体验⑫：删除操作后的撤销条（仅在真实删除后由 useUndo.offer 触发显示，5 秒自动消失） -->
+    <div v-if="undoVisible" class="sdb-undo-snackbar" role="status">
+      <span class="sdb-undo-snackbar__text">{{ undoLabel }}</span>
+      <button class="sdb-undo-snackbar__btn" type="button" @click="undoRun">撤销</button>
     </div>
 
     <van-dialog
