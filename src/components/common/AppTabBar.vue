@@ -23,9 +23,9 @@ function onQuickRecord(): void {
 
 <template>
   <nav class="sdb-tabbar" aria-label="主导航">
-    <!-- 桌面侧栏品牌区（移动端隐藏）：手作感 logo 点 + 名称 + 副标题 -->
+    <!-- 桌面侧栏品牌区（移动端隐藏）：圆角 logo 图 + 名称 + 副标题 -->
     <div class="sdb-tabbar__brand">
-      <span class="sdb-tabbar__logo" aria-hidden="true">水</span>
+      <img src="/icons/pwa-192.png" alt="" aria-hidden="true" class="sdb-tabbar__logo" />
       <span class="sdb-tabbar__brand-text">
         <strong class="sdb-tabbar__name">水电动账</strong>
         <span class="sdb-tabbar__sub">Tallyo · 水电小账本</span>
@@ -119,7 +119,7 @@ function onQuickRecord(): void {
     box-shadow: var(--sdb-shadow);
   }
 
-  /* 品牌区：terracotta 圆形 logo 字 + 名称/副标题 */
+  /* 品牌区：圆角 logo 图（与 App 图标一致，PNG 自带透明圆角）+ 名称/副标题 */
   .sdb-tabbar__brand {
     display: flex;
     align-items: center;
@@ -129,16 +129,12 @@ function onQuickRecord(): void {
     margin-bottom: 14px;
   }
   .sdb-tabbar__logo {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
     width: 40px;
     height: 40px;
-    border-radius: 14px;
-    background: linear-gradient(135deg, var(--sdb-primary), var(--sdb-primary-dark));
-    color: var(--sdb-on-primary);
-    font-size: 18px;
-    font-weight: 700;
+    flex-shrink: 0;
+    /* 图标本身已是圆角 PNG（18% 半径透明角），此圆角仅作浏览器兜底对齐 */
+    border-radius: 12px;
+    object-fit: cover;
     box-shadow: var(--sdb-shadow-sm);
   }
   .sdb-tabbar__brand-text {
