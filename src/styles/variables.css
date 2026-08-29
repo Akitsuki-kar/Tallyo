@@ -106,8 +106,12 @@
   --sdb-maxw-md: 840px; /* 768–1023px 平板内容宽 */
   --sdb-maxw-lg: 1200px; /* ≥1024px 桌面内容宽（大屏网格基线） */
 
-  /* ---- 纸纹底噪（手作质感，极轻；深/浅共用，深色调降透明度） ---- */
-  --sdb-paper: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  /* ---- 纸纹底噪（手作质感，极轻） ----
+   * 原为内联 SVG feTurbulence：每个用到该变量的元素都会触发一次 CPU 滤镜光栅化，
+   * Android WebView 上按 DPR 逐元素生成位图，是滑动卡顿/耗电主因之一。
+   * 改为预渲染的 128px 噪点贴片（scripts/gen_paper_noise.py 生成，public/textures/），
+   * 重复平铺只是一次廉价 GPU blit，不再逐元素跑滤镜。深/浅主题共用同一张贴片。 */
+  --sdb-paper: url('/textures/paper-noise.png');
 
   /* ---- Vant 主题覆盖（接入同一套语义色，圆角对齐） ---- */
   --van-primary: var(--sdb-primary);

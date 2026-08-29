@@ -12,10 +12,13 @@ import { showToast, showSuccessToast, showConfirmDialog } from 'vant';
 import { useSyncStore } from '@/stores/sync';
 import { useSettingsStore } from '@/stores/settings';
 import { exportKeyBackup, importKeyBackup } from '@/sync/crypto';
+import { saveTextFile } from '@/native/saveTextFile';
 import { logger } from '@/utils/logger';
 
 const syncStore = useSyncStore();
 const settingsStore = useSettingsStore();
+// bare：true 时不渲染外卡片标题，作为「数据」分区卡内「设备密钥备份」折叠区的子内容嵌入
+const { bare = false } = defineProps<{ bare?: boolean }>();
 
 const exporting = ref(false);
 const uploading = ref(false);
@@ -51,19 +54,20 @@ async function onExportFile(): Promise<void> {
   exporting.value = true;
   try {
     const json = await exportKeyBackup(exportPass.value);
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = '水电动账-密钥备份.json';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    await markBackedUp();
-    showSuccessToast('密钥备份已导出到文件');
-    exportPass.value = '';
-    exportPass2.value = '';
+    // 原生壳走系统保存框（返回完整路径）；Web 走浏览器下载；取消则不提示成功
+    const res = await saveTextFile('水电动账-密钥备份.json', json);
+    if (res.outcome === 'saved') {
+      await markBackedUp();
+      showSuccessToast(`密钥备份已导出：${res.path}`);
+      exportPass.value = '';
+      exportPass2.value = '';
+    } else if (res.outcome === 'downloaded') {
+      await markBackedUp();
+      showSuccessToast('密钥备份已开始下载（浏览器下载目录）');
+      exportPass.value = '';
+      exportPass2.value = '';
+    }
+    // cancelled：用户在保存框取消，保留表单输入以便重试
   } catch (e) {
     showToast('导出失败：' + (e instanceof Error ? e.message : String(e)));
   } finally {
@@ -164,7 +168,13 @@ async function doImport(json: string): Promise<void> {
 </script>
 
 <template>
-  <van-cell-group inset title="设备密钥备份" class="sdb-keybackup-group">
+  <component
+    :is="bare ? 'div' : 'van-cell-group'"
+    :title="bare ? null : '设备密钥备份'"
+    :inset="bare ? null : true"
+    class="sdb-keybackup-group"
+    :class="{ 'sdb-keybackup-bare': bare }"
+  >
     <div class="sdb-keybackup-warn">
       ⚠️ 设备密钥仅存本机，清除站点数据或更换设备后，已存的同步密码将无法解密。
       可把密钥用<b>你自设的口令</b>加密备份，换机时恢复。请务必牢记口令——口令丢失将无法恢复。
@@ -225,12 +235,23 @@ async function doImport(json: string): Promise<void> {
       style="display: none"
       @change="onImportFileSelected"
     />
-  </van-cell-group>
+  </component>
 </template>
 
 <style scoped>
+/* 外边距与设置页其它分组（.sdb-settings-group）保持一致：顶部 0、底部 space-4，
+   避免在双栏 grid 中「密钥备份」标题比其它组下沉（小标题错位） */
 .sdb-keybackup-group {
-  margin: 8px 0 16px;
+  margin: 0 0 var(--sdb-space-4);
+}
+@media (min-width: 1024px) {
+  .sdb-keybackup-group {
+    margin-bottom: 0;
+  }
+}
+/* bare 模式：作为折叠区子内容，去掉外间距，由父级折叠区控制留白 */
+.sdb-keybackup-bare {
+  margin: 0;
 }
 .sdb-keybackup-warn {
   margin: 12px 16px;

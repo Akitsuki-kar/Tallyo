@@ -23,6 +23,7 @@ import { useBudgetsStore } from '@/stores/budgets';
 import { useReadingsStore } from '@/stores/readings';
 import { useBillsStore } from '@/stores/bills';
 import { useSyncStore } from '@/stores/sync';
+import { installExternalLinkInterceptor } from '@/native/openExternal';
 import { requestPersistentStorage } from '@/db/database';
 import { logger } from '@/utils/logger';
 
@@ -51,6 +52,10 @@ window.addEventListener('error', (event) => {
 });
 
 app.mount('#app');
+
+// 全局外链拦截：原生壳里所有 <a href="http(s)://"> 统一调起系统浏览器，
+// 避免 WebView 内导航（鸣谢等外链在 Android 上「回不到 App」的根因）。Web 端回退新标签。
+installExternalLinkInterceptor();
 
 // 注册 PWA Service Worker（autoUpdate：后台自动更新）。
 // Tauri 原生壳下由本地打包保证离线，且 WebView 对 SW 支持有限，故跳过注册。
@@ -100,7 +105,13 @@ async function bootstrap(): Promise<void> {
 
   // 体验⑬：每周自动备份（已配置且用户启用时）。best-effort，失败不影响主流程。
   try {
-    await useSyncStore().runAutoBackup();
+    const syncStore = useSyncStore();
+    // 必须先 loadConfig：runAutoBackup 靠 isConfigured（读 config.enabled）判断，
+    // 而配置只在 App.vue 的 useAutoSync.onMounted 里异步加载。
+    // 此前两者是并发的，谁先跑完取决于 IndexedDB 往返时序——
+    // 配置后到就永远走不到备份分支，等于「每周自动备份」形同虚设。
+    await syncStore.loadConfig();
+    await syncStore.runAutoBackup();
   } catch (err) {
     logger.warn('[SDB:bootstrap]', '启动时自动备份跳过', {
       message: err instanceof Error ? err.message : String(err),

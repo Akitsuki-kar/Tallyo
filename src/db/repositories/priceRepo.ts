@@ -43,6 +43,8 @@ export async function getAllPrices(): Promise<PriceRecord[]> {
  */
 export async function getDirtyPricesSince(since: number): Promise<PriceRecord[]> {
   const db = await getDB();
-  const range = IDBKeyRange.upperBound(since, true);
+  // lowerBound(since, true) → syncVersion > since（exclusive）
+  // 注意：不可用 upperBound——那取到的是「syncVersion < since」的反向集合。
+  const range = IDBKeyRange.lowerBound(since, true);
   return db.getAllFromIndex('prices', 'syncVersion', range);
 }

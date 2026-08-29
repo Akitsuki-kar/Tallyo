@@ -90,8 +90,9 @@ async function onExportPdf(): Promise<void> {
     const filename = `水电动账-${selectedBill.value.yearMonth}`;
     await exportElementToPdf(templateRef.value, filename);
     showSuccessToast('已导出 PDF');
-  } catch {
-    showToast('导出失败，请重试');
+  } catch (e) {
+    // 展示具体原因（原生壳保存失败 / 捕获失败等），便于定位
+    showToast('导出失败：' + (e instanceof Error ? e.message : String(e)));
   } finally {
     exporting.value = false;
   }

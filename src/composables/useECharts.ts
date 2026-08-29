@@ -102,6 +102,7 @@ export function useECharts(elRef: Ref<HTMLElement | null>, build: BuildOption) {
   let ro: ResizeObserver | null = null;
   let offTheme: (() => void) | null = null;
   let onWinResize: (() => void) | null = null;
+  let onVisibility: (() => void) | null = null;
   const ready = ref(false);
 
   /** 用当前调色板与数据重绘（notMerge=true 完全替换，避免主题切换后残留旧颜色） */
@@ -117,19 +118,32 @@ export function useECharts(elRef: Ref<HTMLElement | null>, build: BuildOption) {
     ready.value = true;
 
     if (typeof ResizeObserver !== 'undefined') {
-      ro = new ResizeObserver(() => chart?.resize());
+      // 后台冻结：页面隐藏时跳过 resize，避免无谓的 canvas 重绘（省电）
+      ro = new ResizeObserver(() => {
+        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+        chart?.resize();
+      });
       ro.observe(elRef.value);
     }
     onWinResize = () => chart?.resize();
     window.addEventListener('resize', onWinResize);
     // 主题切换时重绘（浅色↔深色），保证图表配色与 App 一致
     offTheme = eventBus.on(EVENTS.THEME_CHANGED, render);
+    // 回到前台：补一次 resize + 重绘（后台期间跳过的尺寸变更在此生效）
+    onVisibility = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        chart?.resize();
+        render();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
   });
 
   onBeforeUnmount(() => {
     ro?.disconnect();
     ro = null;
     if (onWinResize) window.removeEventListener('resize', onWinResize);
+    if (onVisibility) document.removeEventListener('visibilitychange', onVisibility);
     offTheme?.();
     chart?.dispose();
     chart = null;

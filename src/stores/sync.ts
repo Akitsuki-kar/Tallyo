@@ -15,6 +15,7 @@ import { mergeSnapshotDetailed } from '@/sync/merge';
 import type { MergeStats, SyncSnapshot } from '@/sync/merge';
 import { eventBus, EVENTS } from '@/utils/eventBus';
 import { useSettingsStore } from '@/stores/settings';
+import { useReadingsStore } from '@/stores/readings';
 import { logger } from '@/utils/logger';
 import { ERROR_CODES } from '@/utils/errorCodes';
 import { ok, fail, type Result } from '@/utils/response';
@@ -91,9 +92,11 @@ export const useSyncStore = defineStore('sync', () => {
     }
   }
 
-  /** 探活：MKCOL + PROPFIND，供 UI「测试连接」使用 */
+  /** 探活：MKCOL + PROPFIND，供 UI「测试连接」使用。
+   *  仅要求 地址/用户名/密码 三项齐全即可测（不依赖 enabled 开关：
+   *  用户可能想先验证连通性再打开启用开关，此时不应被拦）。 */
   async function testConnection(): Promise<Result<void>> {
-    if (!isConfigured.value) {
+    if (!config.value.url || !config.value.username || !config.value.passwordEnc) {
       return fail(ERROR_CODES.SDB_VALIDATE, '请先填写完整的同步配置（地址/用户名/应用密码）');
     }
     try {
@@ -250,9 +253,18 @@ export const useSyncStore = defineStore('sync', () => {
       const meta = await client.propfind(DATA_FILE);
       let remoteEtag: string | undefined = meta.exists ? meta.etag : undefined;
       let remoteSnap = emptySnapshot();
-      if (meta.exists && remoteEtag) {
+      // ⚠️ 只凭 exists 判定是否拉取——不能依赖 etag 非空：
+      // 部分 WebDAV 服务（含部分配置下的坚果云）不返回 getetag，若据此跳过拉取，
+      // 远端会被当成空快照，导致「本地直接覆盖远端」、多端数据互相覆盖丢失。
+      // etag 仅用于下方 PUT 的 If-Match 乐观锁（有则带，无则不带）。
+      if (meta.exists) {
         remoteSnap = parseRemoteSnapshot(await client.get(DATA_FILE));
       }
+
+      // 上传前先重建本地读数链：把 previousReading 校准后再进快照，
+      // 这样修正结果本轮就能一起推上去，对端无需再等一轮才发现链变了。
+      // 传 emitEvent=false：修正内容随即进入本次上传的快照，无需再触发补推。
+      await useReadingsStore().relinkChains(undefined, false);
 
       // 冲突重试：412 → 重新拉取远端合并后重试一次
       let attempt = 0;
@@ -263,6 +275,10 @@ export const useSyncStore = defineStore('sync', () => {
         });
         const { merged, pulled, stats: s } = mergeSnapshotDetailed(localSnap, remoteSnap);
         stats = s;
+
+        // 关闭「同步应用设置」时，远端设置即便被判为胜出也不会写入本地，
+        // 从 pulled 中剔除，避免统计里出现永远不落地的虚假「拉取 1 条」。
+        if (!config.value.syncSettings) delete pulled.settings;
 
         if (hasPulled(pulled)) {
           await applySnapshot(pulled, {

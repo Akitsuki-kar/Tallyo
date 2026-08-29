@@ -117,8 +117,31 @@ watch(canInstall, (v) => {
 function onThemeChanged(mode: unknown): void {
   theme.value = (mode as ThemeMode) ?? 'light';
 }
-function onToggleTheme(): void {
-  toggle();
+// 后台冻结：App 隐藏/显示时给 <html> 切换 .is-hidden，
+// 配合 global.css 暂停所有 CSS 动画（省电，见功耗优化）。
+function onVisibilityPause(): void {
+  if (typeof document === 'undefined') return;
+  document.documentElement.classList.toggle('is-hidden', document.visibilityState === 'hidden');
+}
+/**
+ * 顶栏主题切换。
+ *
+ * 仅调 useTheme().toggle() 是不够的：它只写 localStorage['sdb:theme'] 与 data-theme，
+ * 不动 settings store，也不进 IndexedDB。后果有三：
+ *   ① 刷新后 settings.load() 会用库里的旧主题重新 applyThemeMode，视觉上「切完又跳回去」；
+ *   ② 设置页的主题分段控件仍显示旧值，与顶栏状态对不上；
+ *   ③ 主题永远不会同步到其它设备（同步读的是库里的 settings）。
+ * 因此切换后必须回写 settings store，让 IndexedDB 成为主题的唯一事实来源。
+ */
+async function onToggleTheme(): Promise<void> {
+  const next = toggle();
+  try {
+    await settings.update({ theme: next });
+  } catch (err) {
+    logger.error('app', '保存主题失败', {
+      message: err instanceof Error ? err.message : String(err),
+    });
+  }
 }
 function onInstall(): void {
   void prompt();
@@ -161,6 +184,8 @@ onMounted(async () => {
   eventBus.on(EVENTS.THEME_CHANGED, onThemeChanged);
   eventBus.on(EVENTS.QUICK_RECORD, onQuickRecord);
   eventBus.on(EVENTS.ONBOARDING_REPLAY, onOnboardingReplay);
+  document.addEventListener('visibilitychange', onVisibilityPause);
+  onVisibilityPause(); // 初始化时同步一次（处理已处于后台的极端情况）
 
   // 首启：未完成引导 → 直接进入沉浸式向导（当日不再弹快速记录，避免叠加打扰）
   const onboarded = isOnboarded();
@@ -191,6 +216,7 @@ onBeforeUnmount(() => {
   eventBus.off(EVENTS.THEME_CHANGED, onThemeChanged);
   eventBus.off(EVENTS.QUICK_RECORD, onQuickRecord);
   eventBus.off(EVENTS.ONBOARDING_REPLAY, onOnboardingReplay);
+  document.removeEventListener('visibilitychange', onVisibilityPause);
 });
 </script>
 

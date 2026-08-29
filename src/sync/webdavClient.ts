@@ -1,13 +1,16 @@
 /**
  * WebDAV 客户端（纯网络层，不依赖 store / Vue）。
- * 支持相对路径（如 /dav/我的应用/，开发走 Vite 代理）与绝对 URL（自建反代）两种 baseUrl。
+ * 支持相对路径（如 /dav/我的应用/，开发走 Vite 代理）与绝对 URL（自建反代 / Tauri 原生 HTTP）两种 baseUrl。
  * 通过 Basic Auth 鉴权；propfind 用命名空间安全的 getElementsByTagNameNS 解析；
  * put 支持 If-Match 乐观并发；所有请求带超时（AbortController）。
+ * 传输层：Tauri 原生壳自动切换 tauri-plugin-http 的原生 fetch（绕开 WebView CORS，见 @/native/httpTransport）。
  */
 import { bytesToBase64 } from '@/utils/base64';
 import { SdbError } from '@/sync/errors';
 import { ERROR_CODES } from '@/utils/errorCodes';
 import { logger } from '@/utils/logger';
+import { isTauriShell } from '@/utils/platform';
+import { getWebFetch } from '@/native/httpTransport';
 
 export interface WebdavCredentials {
   baseUrl: string;
@@ -34,6 +37,8 @@ export interface WebdavClientOptions {
   timeoutMs?: number;
   /** 可注入的 XML 解析器（默认浏览器 DOMParser，便于 node 测试注入） */
   parseXml?: (xml: string) => XmlDocumentLike;
+  /** 可注入的 fetch 实现（默认按运行环境自动选择：Tauri 原生 HTTP / 浏览器 fetch，便于 node 测试注入） */
+  fetchImpl?: typeof fetch;
 }
 
 export interface WebdavClient {
@@ -113,6 +118,17 @@ export function createWebdavClient(
     attempt = 1,
   ): Promise<Response> {
     const url = joinPath(cred.baseUrl, path);
+    // Tauri 原生 fetch（reqwest）只接受绝对 URL；相对路径（/dav/...）仅适用于有同源反代的
+    // Web 环境（Vite 代理 / Nginx），原生壳没有服务器可解析，提前给出可操作报错而非晦涩的原生异常。
+    if (isTauriShell() && !/^https?:\/\//i.test(url)) {
+      throw new SdbError(
+        ERROR_CODES.SDB_WEBDAV_CONN,
+        'server',
+        '原生客户端请填写完整 HTTPS 地址（如 https://dav.jianguoyun.com/dav/水电动账），相对路径仅 Web 端同源反代可用',
+      );
+    }
+    // 传输实现：测试可注入 fetchImpl；默认按环境自动选择（Tauri→原生 HTTP，Web→浏览器 fetch）
+    const doFetch = options.fetchImpl ?? (await getWebFetch());
     const headers: Record<string, string> = {
       // 日志不打印任何凭据/响应体，避免泄露敏感信息
       Authorization: buildAuthHeader(cred.username, cred.password),
@@ -122,7 +138,7 @@ export function createWebdavClient(
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       logger.info('[SDB:webdav]', `${method} ${path} (attempt ${attempt}/${MAX_ATTEMPTS})`);
-      const res = await fetch(url, {
+      const res = await doFetch(url, {
         method,
         headers,
         body: opts.body,

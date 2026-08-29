@@ -22,7 +22,6 @@ body {
   background-repeat: repeat;
   color: var(--sdb-text);
   -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
   transition:
     background-color 0.3s var(--sdb-ease-out),
     color 0.3s var(--sdb-ease-out);
@@ -44,11 +43,11 @@ a {
   border-radius: 6px;
 }
 
-/* ---------------- 通用卡片：便签纸感 ---------------- */
+/* ---------------- 通用卡片：便签纸感 ----------------
+ * 卡片改用纯色表面（不再铺纸纹）。纸纹只在 body 一层保留（见 body），
+ * 这样长列表里的数十张卡片不再各自触发滤镜/位图重栅格化，显著降低滚动合成开销。 */
 .sdb-card {
   background: var(--sdb-surface);
-  background-image: var(--sdb-paper);
-  background-repeat: repeat;
   border: 1px solid var(--sdb-border);
   border-radius: var(--sdb-radius);
   box-shadow: var(--sdb-shadow);
@@ -291,5 +290,31 @@ a {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* ---------------- 后台冻结（省电） ----------------
+ * App 进入后台时，App.vue 给 <html> 加 .is-hidden，
+ * 此处暂停所有 CSS 动画（含 budget-pulse 等常驻动画），
+ * 避免 WebView 在后台仍持续合成动画浪费 CPU/射频。 */
+html.is-hidden *,
+html.is-hidden *::before,
+html.is-hidden *::after {
+  animation-play-state: paused !important;
+}
+
+/* ---------------- 移动端阴影降级（省电，见功耗优化） ----------------
+ * 大模糊半径的柔影在移动端 GPU 上合成更贵；缩到小半径降低开销。
+ * 桌面（≥768px）仍保留更舒展的阴影层次。 */
+@media (max-width: 767px) {
+  :root {
+    --sdb-shadow-sm: 0 1px 4px oklch(45% 0.13 45 / 0.08);
+    --sdb-shadow: 0 4px 12px oklch(45% 0.13 45 / 0.1);
+    --sdb-shadow-lg: 0 8px 20px oklch(45% 0.13 45 / 0.14);
+  }
+  [data-theme='dark'] {
+    --sdb-shadow-sm: 0 1px 4px oklch(12% 0.02 40 / 0.3);
+    --sdb-shadow: 0 4px 12px oklch(12% 0.02 40 / 0.4);
+    --sdb-shadow-lg: 0 8px 20px oklch(10% 0.02 40 / 0.45);
   }
 }

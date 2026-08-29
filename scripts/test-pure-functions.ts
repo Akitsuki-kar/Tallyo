@@ -8,6 +8,7 @@
 import { findPreviousReading, relinkChain } from '@/utils/readingChain';
 import { resolveLWW, mergeEntities, mergeSnapshotDetailed } from '@/sync/merge';
 import { monthlyUsage, monthReadings } from '@/utils/billing';
+import { calcTieredCost, calcCost, defaultPriceConfig } from '@/utils/pricing';
 import { isQuotaError } from '@/db/guard';
 import { encryptKeyWithPassphrase, decryptKeyWithPassphrase } from '@/sync/crypto';
 import type { Reading, Bill, Premise, PriceRecord, Budget, Settings } from '@/types';
@@ -379,6 +380,156 @@ async function testKeyBackup(): Promise<void> {
 }
 
 await testKeyBackup();
+
+// ─── webdavClient 回归：propfind 在「无 etag」时也必须报告 exists（防多端覆盖 bug）───
+// 背景：sync 曾以 `meta.exists && remoteEtag` 判定是否拉取远端；若服务不返回 getetag，
+// 远端会被当成空快照 → 本地直接覆盖远端、多端数据互相覆盖丢失。
+// 本条锁定：207 响应即使无 getetag，exists 也必须为 true。
+
+// 极简 XML 文档 mock：按标签返回（ns 忽略；getElementsByTagNameNS 由 webdavClient 以 'DAV:' 调用）
+function xmlDoc(tags: Record<string, string>): { getElementsByTagNameNS: (ns: string, tag: string) => ArrayLike<{ textContent: string }> } {
+  return {
+    getElementsByTagNameNS: (_ns: string, tag: string) =>
+      tag in tags ? [{ textContent: tags[tag] }] : [],
+  };
+}
+
+// 构造 mock fetch：按 pathname 返回预设 Response
+function mockFetchOnce(
+  status: number,
+  body: string,
+  headers: Record<string, string> = {},
+): typeof fetch {
+  const doFetch = (async () => {
+    return new Response(body, { status, headers });
+  }) as unknown as typeof fetch;
+  return doFetch;
+}
+
+{
+  const { createWebdavClient } = await import('@/sync/webdavClient');
+  const cred = { baseUrl: 'https://dav.example.com/', username: 'u', password: 'p' };
+
+  // 1) 207 且 XML 无 getetag → exists=true、etag=undefined（本次 bug 的回归防线）
+  {
+    const noEtagXml =
+      '<?xml version="1.0"?><D:multistatus xmlns:D="DAV:"><D:response><D:href>/data.json</D:href><D:propstat><D:prop><D:getcontentlength>42</D:getcontentlength></D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response></D:multistatus>';
+    const client = createWebdavClient(cred, {
+      fetchImpl: mockFetchOnce(207, noEtagXml),
+      parseXml: () =>
+        xmlDoc({ getcontentlength: '42' }) as unknown as import('@/sync/webdavClient').XmlDocumentLike,
+    });
+    const meta = await client.propfind('data.json');
+    assert(meta.exists === true, 'propfind 无 etag 时 exists 必须为 true（防覆盖）');
+    assert(meta.etag === undefined, 'propfind 无 etag 时 etag 为 undefined');
+    assert(meta.size === 42, 'propfind 仍能解析 getcontentlength');
+  }
+
+  // 2) 207 且 XML 含 getetag → etag 正常解析
+  {
+    const withEtagXml =
+      '<?xml version="1.0"?><D:multistatus xmlns:D="DAV:"><D:response><D:href>/data.json</D:href><D:propstat><D:prop><D:getetag>"abc123"</D:getetag><D:getcontentlength>42</D:getcontentlength></D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response></D:multistatus>';
+    const client = createWebdavClient(cred, {
+      fetchImpl: mockFetchOnce(207, withEtagXml),
+      parseXml: () => {
+        const doc = {
+          getElementsByTagNameNS: (ns: string, tag: string) => {
+            if (tag === 'getetag') return [{ textContent: '"abc123"' }];
+            if (tag === 'getcontentlength') return [{ textContent: '42' }];
+            return [];
+          },
+        };
+        return doc as unknown as import('@/sync/webdavClient').XmlDocumentLike;
+      },
+    });
+    const meta = await client.propfind('data.json');
+    assert(meta.exists === true, 'propfind 有 etag 时 exists 为 true');
+    assert(meta.etag === '"abc123"', 'propfind 解析出 etag');
+  }
+
+  // 3) 404 → exists=false（远端无文件，sync 应走空快照分支）
+  {
+    const client = createWebdavClient(cred, {
+      fetchImpl: mockFetchOnce(404, ''),
+      parseXml: () => xmlDoc({}) as unknown as import('@/sync/webdavClient').XmlDocumentLike,
+    });
+    const meta = await client.propfind('data.json');
+    assert(meta.exists === false, 'propfind 404 时 exists=false');
+  }
+}
+
+// ─── 阶梯计价测试 ───
+// 重点：calcTieredCost 必须对「档位填写顺序」不敏感。
+// 单价面板允许在任意位置插入档位、任意修改上限，用户填出的顺序不保证升序；
+// 若不归一化，乱序档位会被 range<=0 静默跳过、或首个 null 档吃掉全部用量，
+// 产出一份「看起来正常但金额不对」的账单。
+
+function near(actual: number, expected: number, message: string): void {
+  assert(Math.abs(actual - expected) < 0.005, `${message}（实测 ${actual}，期望 ${expected}）`);
+}
+
+// 基准：升序档位 [≤216 @0.56, ≤480 @0.61, 及以上 @0.86]，用量 300
+// = 216×0.56 + 84×0.61 = 120.96 + 51.24 = 172.20
+{
+  const tiers = [
+    { upTo: 216, price: 0.56 },
+    { upTo: 480, price: 0.61 },
+    { upTo: null, price: 0.86 },
+  ];
+  near(calcTieredCost(300, tiers), 172.2, 'calcTieredCost: 升序档位基准');
+}
+
+// 回归：同一组档位打乱顺序，结果必须与升序一致
+{
+  const shuffled = [
+    { upTo: null, price: 0.86 },
+    { upTo: 480, price: 0.61 },
+    { upTo: 216, price: 0.56 },
+  ];
+  near(calcTieredCost(300, shuffled), 172.2, 'calcTieredCost: 乱序档位须与升序等价（回归）');
+}
+
+// 回归：null（及以上）出现在中间时，不能被提前吃掉全部用量
+{
+  const nullFirst = [
+    { upTo: null, price: 0.86 },
+    { upTo: 216, price: 0.56 },
+  ];
+  // 归一化后 = [≤216 @0.56, 及以上 @0.86] → 216×0.56 + 84×0.86 = 120.96 + 72.24 = 193.20
+  near(calcTieredCost(300, nullFirst), 193.2, 'calcTieredCost: null 档须排到最后（回归）');
+}
+
+// 边界与脏数据
+{
+  const tiers = [
+    { upTo: 216, price: 0.56 },
+    { upTo: null, price: 0.86 },
+  ];
+  near(calcTieredCost(0, tiers), 0, 'calcTieredCost: 用量 0 → 0');
+  near(calcTieredCost(-5, tiers), 0, 'calcTieredCost: 负用量 → 0');
+  near(calcTieredCost(300, []), 0, 'calcTieredCost: 空档位 → 0');
+  // 脏数据（NaN 单价）应被丢弃而非污染出 NaN 账单
+  const dirty = [
+    { upTo: 100, price: Number.NaN },
+    { upTo: null, price: 0.86 },
+  ];
+  near(calcTieredCost(50, dirty), 43, 'calcTieredCost: NaN 单价档位被丢弃');
+  assert(Number.isFinite(calcTieredCost(50, dirty)), 'calcTieredCost: 脏数据不得产出 NaN');
+}
+
+// calcCost：固定单价 / 阶梯两条路径
+{
+  const flat = defaultPriceConfig();
+  near(calcCost('electricity', 100, flat), 56, 'calcCost: 固定单价 100×0.56');
+  near(calcCost('water', 10, flat), 35, 'calcCost: 固定单价 10×3.5');
+  near(calcCost('electricity', 0, flat), 0, 'calcCost: 用量 0 → 0');
+
+  const tiered = { ...flat, mode: 'tiered' as const };
+  // 电阶梯默认 [≤216 @0.56, ≤480 @0.61, 及以上 @0.86]，用量 300 → 172.20
+  near(calcCost('electricity', 300, tiered), 172.2, 'calcCost: 阶梯计价走 calcTieredCost');
+  // 水阶梯默认 [≤180 @3.5, 及以上 @4.8]，用量 200 → 180×3.5 + 20×4.8 = 630 + 96 = 726
+  near(calcCost('water', 200, tiered), 726, 'calcCost: 水阶梯独立生效');
+}
 
 // ─── 结果汇总 ───
 console.log(`\n${passed} passed, ${failed} failed`);

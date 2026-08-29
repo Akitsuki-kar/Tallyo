@@ -281,7 +281,8 @@ async function onSubmit(): Promise<void> {
           <span class="picker-pop__title">选择日期</span>
           <span class="picker-pop__btn picker-pop__btn--ok" @click="onDateConfirm">确定</span>
         </div>
-        <van-date-picker v-model="dateParts" :min-date="minDate" :max-date="maxDate" />
+        <!-- 已用自定义 header（取消/确定），关闭 Vant 自带工具栏，避免出现两套按钮 -->
+        <van-date-picker v-model="dateParts" :min-date="minDate" :max-date="maxDate" :show-toolbar="false" />
       </div>
     </van-popup>
 

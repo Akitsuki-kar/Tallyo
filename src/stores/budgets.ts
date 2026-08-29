@@ -69,6 +69,42 @@ export const useBudgetsStore = defineStore('budgets', () => {
     eventBus.emit(EVENTS.BUDGET_CHANGED, { premiseId });
   }
 
+  /**
+   * 房源删除时清理预算（软删墓碑，需随同步传播到对端）。
+   * 与 prices.removePriceForPremise 对称，由 premises.removePremise 级联调用。
+   */
+  async function removeBudgetForPremise(premiseId: string): Promise<void> {
+    const existing = await budgetRepo.getBudgetRecord(premiseId);
+    if (!existing || existing.isDeleted) return;
+    const tombstone: Budget = {
+      ...existing,
+      isDeleted: true,
+      updatedAt: new Date().toISOString(),
+      syncVersion: existing.syncVersion + 1,
+    };
+    await budgetRepo.putBudget(tombstone);
+    delete records.value[premiseId];
+    eventBus.emit(EVENTS.BUDGET_CHANGED, { premiseId });
+  }
+
+  /**
+   * 撤销删除房源时恢复其预算配置（removeBudgetForPremise 的逆操作）。
+   * 仅在存在墓碑记录时生效，避免给从未设过预算的房源凭空造出一条记录。
+   */
+  async function restoreBudgetForPremise(premiseId: string): Promise<void> {
+    const existing = await budgetRepo.getBudgetRecord(premiseId);
+    if (!existing || !existing.isDeleted) return;
+    const restored: Budget = {
+      ...existing,
+      isDeleted: false,
+      updatedAt: new Date().toISOString(),
+      syncVersion: existing.syncVersion + 1,
+    };
+    await budgetRepo.putBudget(restored);
+    records.value[premiseId] = restored;
+    eventBus.emit(EVENTS.BUDGET_CHANGED, { premiseId });
+  }
+
   /** 计算某账单相对其房源预算的状态（80%/100% 预警，按 mode 维度） */
   function statusForBill(bill: Bill): BudgetStatus {
     const budget = records.value[bill.premiseId];
@@ -138,6 +174,8 @@ export const useBudgetsStore = defineStore('budgets', () => {
     getBudget,
     ensureDefault,
     setBudget,
+    removeBudgetForPremise,
+    restoreBudgetForPremise,
     statusForBill,
     ratioFor,
     warnings,

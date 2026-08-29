@@ -7,9 +7,15 @@
  * 严格手作美学 token + 深色主题自动适配（全部走 --sdb-* 变量）。
  */
 import { creditGroups } from '@/data/credits';
+import { openExternal } from '@/native/openExternal';
 
 // v-model:show 由设置页控制显隐
 const show = defineModel<boolean>('show', { default: false });
+
+// 外链统一走 openExternal：原生壳调起系统浏览器，Web 回退新标签 + 复制链接兜底
+function onOpen(url: string): void {
+  void openExternal(url);
+}
 </script>
 
 <template>
@@ -22,13 +28,12 @@ const show = defineModel<boolean>('show', { default: false });
     <div class="sdb-credits-body">
       <section v-for="group in creditGroups" :key="group.title" class="sdb-credits-group">
         <h4 class="sdb-credits-group-title">{{ group.title }}</h4>
-        <a
+        <button
           v-for="item in group.items"
           :key="item.name"
+          type="button"
           class="sdb-credit-item"
-          :href="item.url"
-          target="_blank"
-          rel="noopener noreferrer"
+          @click="onOpen(item.url)"
         >
           <span class="sdb-credit-main">
             <span class="sdb-credit-name">{{ item.name }}</span>
@@ -38,7 +43,7 @@ const show = defineModel<boolean>('show', { default: false });
             <span class="sdb-credit-license">{{ item.license }}</span>
             <van-icon name="arrow" class="sdb-credit-arrow" />
           </span>
-        </a>
+        </button>
       </section>
     </div>
 
@@ -87,12 +92,18 @@ const show = defineModel<boolean>('show', { default: false });
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  width: 100%;
   padding: 12px 14px;
   margin-bottom: 8px;
   background: var(--sdb-surface);
   border: 1px solid var(--sdb-border);
   border-radius: var(--sdb-radius-sm);
   text-decoration: none;
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
   transition:
     transform var(--sdb-dur-fast) var(--sdb-ease-out),
     box-shadow var(--sdb-dur-fast) var(--sdb-ease-out);

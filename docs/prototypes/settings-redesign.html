@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>设置页重构原型 · 水电动账 Tallyo</title>
+<style>
+/* =========================================================================
+ * 原型说明：本文件是「设置页重排」的可交互原型，不进构建产物。
+ * 视觉 token 与 src/styles/variables.css + theme.css 完全一致（OKLCH 手作美学）。
+ * 字体在原型里回退到系统圆体栈（真实环境用自托管的霞鹜文楷轻便版 + Caveat）。
+ * ========================================================================= */
+
+/* ---------- 设计 token（与项目同步） ---------- */
+:root {
+  --sdb-primary: oklch(64% 0.155 47);
+  --sdb-primary-light: oklch(83% 0.1 52);
+  --sdb-primary-dark: oklch(53% 0.145 44);
+  --sdb-on-primary: oklch(99% 0.008 85);
+  --sdb-accent: oklch(82% 0.13 88);
+  --sdb-bg: oklch(96.5% 0.014 80);
+  --sdb-surface: oklch(98.5% 0.008 80);
+  --sdb-surface-2: oklch(93% 0.022 75);
+  --sdb-border: oklch(88% 0.022 70);
+  --sdb-text: oklch(32% 0.026 50);
+  --sdb-text-secondary: oklch(53% 0.024 55);
+  --sdb-text-tertiary: oklch(66% 0.02 58);
+  --sdb-success: oklch(60% 0.13 150);
+  --sdb-warning: oklch(74% 0.13 78);
+  --sdb-danger: oklch(58% 0.17 27);
+  --sdb-radius: 18px;
+  --sdb-radius-lg: 24px;
+  --sdb-radius-sm: 12px;
+  --sdb-radius-pill: 999px;
+  --sdb-shadow-sm: 0 2px 8px oklch(45% 0.13 45 / 0.1);
+  --sdb-shadow: 0 8px 24px oklch(45% 0.13 45 / 0.12);
+  --sdb-shadow-lg: 0 16px 40px oklch(45% 0.13 45 / 0.16);
+  --sdb-space-1: 4px;  --sdb-space-2: 8px;  --sdb-space-3: 12px;
+  --sdb-space-4: 16px; --sdb-space-5: 24px; --sdb-space-6: 32px;
+  --sdb-text-xs: 0.75rem; --sdb-text-sm: 0.875rem; --sdb-text-base: 1rem;
+  --sdb-text-lg: 1.125rem; --sdb-text-xl: 1.375rem;
+  --sdb-font-rounded: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --sdb-font-hand: 'Caveat', var(--sdb-font-rounded);
+  --sdb-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --sdb-ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --sdb-dur-fast: 140ms; --sdb-dur: 260ms;
+  --sdb-paper: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+}
+[data-theme='dark'] {
+  --sdb-primary: oklch(72% 0.13 47);
+  --sdb-primary-light: oklch(83% 0.1 52);
+  --sdb-on-primary: oklch(22% 0.02 50);
+  --sdb-accent: oklch(85% 0.11 88);
+  --sdb-bg: oklch(21% 0.012 50);
+  --sdb-surface: oklch(26% 0.012 50);
+  --sdb-surface-2: oklch(31% 0.014 50);
+  --sdb-border: oklch(38% 0.012 60);
+  --sdb-text: oklch(93% 0.008 80);
+  --sdb-text-secondary: oklch(74% 0.012 60);
+  --sdb-text-tertiary: oklch(60% 0.012 60);
+  --sdb-shadow-sm: 0 2px 8px oklch(12% 0.02 40 / 0.4);
+  --sdb-shadow: 0 8px 24px oklch(12% 0.02 40 / 0.45);
+  --sdb-paper: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.025'/%3E%3C/svg%3E");
+}
+
+/* ---------- 原型实验台（非 App 内容） ---------- */
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; height: 100%; }
+body {
+  font-family: var(--sdb-font-rounded);
+  background: oklch(90% 0.008 70);
+  color: var(--sdb-text);
+  display: flex; flex-direction: column;
+}
+.lab {
+  flex: none; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 10px 16px; background: oklch(24% 0.01 50); color: oklch(93% 0.01 80);
+  font-size: 12px; position: relative; z-index: 10;
+}
+.lab__title { font-weight: 700; letter-spacing: .02em; }
+.lab__group { display: flex; align-items: center; gap: 6px; }
+.lab__group > span { opacity: .65; }
+.lab button {
+  font: inherit; font-size: 12px; cursor: pointer;
+  padding: 5px 11px; border-radius: var(--sdb-radius-pill);
+  border: 1px solid oklch(45% 0.01 50); background: oklch(30% 0.01 50);
+  color: oklch(93% 0.01 80); transition: background var(--sdb-dur-fast) var(--sdb-ease-out);
+}
+.lab button:hover { background: oklch(38% 0.01 50); }
+.lab button[aria-pressed='true'] { background: var(--sdb-primary); border-color: var(--sdb-primary); color: #fff; }
+.lab__hint { opacity: .5; }
+
+.stage { flex: 1; display: flex; justify-content: center; align-items: stretch; padding: 20px; min-height: 0; }
+.device {
+  width: var(--frame-w, 390px); height: 100%; max-height: 100%;
+  display: flex; flex-direction: column; overflow: hidden;
+  background: var(--sdb-bg); background-image: var(--sdb-paper); background-repeat: repeat;
+  border-radius: 28px; box-shadow: 0 24px 60px oklch(30% 0.05 45 / 0.28);
+  border: 1px solid oklch(82% 0.01 70);
+  transition: width var(--sdb-dur) var(--sdb-ease-out);
+}
+body.vp-desktop .device { width: 100%; max-width: 1240px; border-radius: var(--sdb-radius-lg); }
+
+/* ---------- App 壳 ---------- */
+.shell { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.sidebar { display: none; }
+@media (min-width: 0px) { body.vp-desktop .shell { flex-direction: row; } }
+body.vp-desktop .sidebar,
+body.vp-tablet .sidebar {
+  display: flex; flex-direction: column; gap: 4px;
+  width: 232px; flex: none; padding: 18px 12px;
+  border-right: 1px solid var(--sdb-border);
+  background: var(--sdb-surface);
+}
+body.vp-tablet .sidebar { width: 84px; padding: 18px 8px; align-items: center; }
+.sb__brand { display: flex; align-items: center; gap: 10px; padding: 6px 10px 18px; }
+.sb__logo {
+  width: 34px; height: 34px; flex: none; border-radius: 10px;
+  display: grid; place-items: center; font-size: 15px; font-weight: 700; color: var(--sdb-on-primary);
+  background: linear-gradient(135deg, var(--sdb-primary), var(--sdb-accent));
+}
+.sb__name { font-weight: 700; font-size: 15px; }
+.sb__pill {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border-radius: var(--sdb-radius-pill);
+  font-size: 14px; color: var(--sdb-text-secondary); cursor: pointer;
+  transition: background var(--sdb-dur-fast) var(--sdb-ease-out);
+}
+.sb__pill:hover { background: var(--sdb-surface-2); }
+.sb__pill.is-on { background: color-mix(in oklch, var(--sdb-primary) 14%, transparent); color: var(--sdb-text); font-weight: 600; }
+.sb__ico { width: 20px; text-align: center; flex: none; }
+body.vp-tablet .sb__name, body.vp-tablet .sb__pill span:not(.sb__ico) { display: none; }
+body.vp-tablet .sb__pill { border-radius: var(--sdb-radius-sm); justify-content: center; }
+
+.col { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.hdr {
+  flex: none; height: 54px; display: flex; align-items: center; gap: 8px;
+  padding: 0 16px; border-bottom: 1px solid var(--sdb-border);
+  background: var(--sdb-surface);
+}
+.hdr__title { font-size: var(--sdb-text-lg); font-weight: 700; }
+.hdr__spacer { flex: 1; }
+.hdr__btn {
+  width: 36px; height: 36px; border-radius: 10px; border: none; cursor: pointer;
+  background: transparent; color: var(--sdb-text); font-size: 17px;
+  display: grid; place-items: center;
+}
+.hdr__btn:hover { background: var(--sdb-surface-2); }
+
+.main { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 14px 88px; }
+body.vp-desktop .main { padding: 24px 28px 40px; }
+
+.tabbar {
+  flex: none; display: flex; border-top: 1px solid var(--sdb-border);
+  background: var(--sdb-surface); padding-bottom: env(safe-area-inset-bottom, 0);
+}
+.tabbar__i {
+  flex: 1; padding: 8px 0 7px; border: none; background: transparent; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  font-size: 10px; color: var(--sdb-text-tertiary); font-family: inherit;
+}
+.tabbar__i.is-on { color: var(--sdb-primary); font-weight: 600; }
+.tabbar__i em { font-style: normal; font-size: 18px; line-height: 1; }
+body.vp-desktop .tabbar { display: none; }
+
+/* ---------- 页标题 ---------- */
+.page-title {
+  font-size: var(--sdb-text-xl); font-weight: 700; margin: 2px 0 16px; letter-spacing: .01em;
+}
+.page-title::after {
+  content: ''; display: block; width: 36px; height: 4px; margin-top: 6px;
+  border-radius: var(--sdb-radius-pill); background: linear-gradient(90deg, var(--sdb-primary), var(--sdb-accent));
+}
+
+/* ---------- 便签卡基元 ---------- */
+.card {
+  position: relative;
+  background: var(--sdb-surface);
+  border: 1px solid var(--sdb-border);
+  border-radius: var(--sdb-radius-lg);
+  box-shadow: var(--sdb-shadow-sm);
+  padding: 16px 14px 14px;
+  margin-bottom: 12px;
+}
+/* 胶带：仅分组卡有 */
+.card--sec { padding-top: 22px; }
+.tape {
+  position: absolute; top: -9px; left: 20px; width: 62px; height: 19px;
+  border-radius: 2px; transform: rotate(-3deg);
+  background: color-mix(in oklch, var(--sdb-accent) 62%, transparent);
+  box-shadow: 0 1px 3px oklch(45% 0.1 45 / 0.18);
+}
+.sec__title {
+  font-family: var(--sdb-font-hand); font-size: 20px; font-weight: 700;
+  margin: 0 0 10px; color: var(--sdb-text); letter-spacing: .02em;
+  display: flex; align-items: center; gap: 8px;
+}
+.sec__title small {
+  font-family: var(--sdb-font-rounded); font-size: 11px; font-weight: 400;
+  color: var(--sdb-text-tertiary); letter-spacing: 0;
+}
+
+/* ---------- 桌面双栏 ---------- */
+.grid { display: grid; grid-template-columns: 1fr; }
+body.vp-desktop .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
+body.vp-desktop .grid .card { margin-bottom: 0; }
+body.vp-desktop .grid .span2 { grid-column: 1 / -1; }
+
+/* ---------- 概览卡 ---------- */
+.ov { padding: 18px 16px 14px; }
+.ov__top { display: flex; align-items: center; gap: 12px; }
+.ov__badge {
+  width: 46px; height: 46px; flex: none; border-radius: 50%; display: grid; place-items: center;
+  font-family: var(--sdb-font-hand); font-size: 20px; font-weight: 700; color: var(--sdb-on-primary);
+  background: linear-gradient(135deg, var(--sdb-primary), var(--sdb-accent));
+  box-shadow: var(--sdb-shadow-sm);
+}
+.ov__meta { flex: 1; min-width: 0; }
+.ov__label { font-size: 11px; color: var(--sdb-text-tertiary); letter-spacing: .04em; }
+.ov__name {
+  font-family: var(--sdb-font-hand); font-size: 21px; font-weight: 700; line-height: 1.25;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ov__sub { font-size: var(--sdb-text-xs); color: var(--sdb-text-secondary); margin-top: 2px; }
+.ov__sync {
+  flex: none; display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 10px; border-radius: var(--sdb-radius-pill);
+  background: var(--sdb-surface-2); font-size: 11px; color: var(--sdb-text-secondary);
+}
+.ov__sync i { width: 7px; height: 7px; border-radius: 50%; background: var(--sdb-success); }
+.ov__stats {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;
+  margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--sdb-border);
+}
+.stat { text-align: center; }
+.stat__n { display: block; font-family: var(--sdb-font-hand); font-size: 24px; font-weight: 700; line-height: 1.1; }
+.stat__n--sm { font-size: 15px; padding-top: 6px; }
+.stat__l { display: block; font-size: 10px; color: var(--sdb-text-tertiary); margin-top: 2px; }
+
+/* ---------- 通用行 ---------- */
+.row {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  min-height: 46px; padding: 9px 10px; border: none; background: transparent;
+  border-radius: var(--sdb-radius-sm); cursor: pointer; text-align: left;
+  font-family: inherit; font-size: var(--sdb-text-base); color: var(--sdb-text);
+  transition: background var(--sdb-dur-fast) var(--sdb-ease-out);
+}
+.row + .row { box-shadow: inset 0 1px 0 var(--sdb-border); border-radius: 0; }
+.row:hover { background: var(--sdb-surface-2); }
+.row:active { transform: scale(.995); }
+.row__ico {
+  width: 30px; height: 30px; flex: none; border-radius: 9px; display: grid; place-items: center;
+  background: var(--sdb-surface-2); font-size: 14px;
+}
+.row__txt { flex: 1; min-width: 0; }
+.row__t { font-size: var(--sdb-text-base); }
+.row__d { font-size: 11px; color: var(--sdb-text-tertiary); margin-top: 1px; }
+.row__v { flex: none; font-size: var(--sdb-text-sm); color: var(--sdb-text-secondary); }
+.row__chev { flex: none; color: var(--sdb-text-tertiary); font-size: 13px; }
+
+/* ---------- 房源行 ---------- */
+.prem { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: var(--sdb-radius-sm); }
+.prem + .prem { box-shadow: inset 0 1px 0 var(--sdb-border); }
+.prem.is-on { background: color-mix(in oklch, var(--sdb-primary) 8%, transparent); }
+.prem__av {
+  width: 32px; height: 32px; flex: none; border-radius: 50%; display: grid; place-items: center;
+  font-family: var(--sdb-font-hand); font-size: 16px; font-weight: 700;
+  background: var(--sdb-surface-2); color: var(--sdb-text-secondary);
+}
+.prem.is-on .prem__av { background: var(--sdb-primary); color: var(--sdb-on-primary); }
+.prem__txt { flex: 1; min-width: 0; }
+.prem__n { font-size: var(--sdb-text-base); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.prem__d { font-size: 11px; color: var(--sdb-text-tertiary); margin-top: 1px; }
+.prem__tag {
+  flex: none; padding: 2px 8px; border-radius: var(--sdb-radius-pill);
+  font-size: 10px; background: var(--sdb-primary); color: var(--sdb-on-primary);
+}
+.prem__ops { flex: none; display: flex; gap: 2px; }
+.prem__op { width: 28px; height: 28px; border: none; background: transparent; border-radius: 8px; cursor: pointer; color: var(--sdb-text-tertiary); font-size: 13px; }
+.prem__op:hover { background: var(--sdb-surface-2); color: var(--sdb-text); }
+.add {
+  width: 100%; margin-top: 8px; padding: 10px; cursor: pointer;
+  border: 1px dashed var(--sdb-border); border-radius: var(--sdb-radius-sm);
+  background: transparent; color: var(--sdb-text-secondary);
+  font-family: inherit; font-size: var(--sdb-text-sm);
+}
+.add:hover { border-color: var(--sdb-primary); color: var(--sdb-primary); }
+
+/* ---------- 分段控件 ---------- */
+.seg { display: flex; gap: 4px; padding: 4px; background: var(--sdb-surface-2); border-radius: var(--sdb-radius-pill); }
+.seg__i {
+  flex: 1; padding: 8px 4px; border: none; border-radius: var(--sdb-radius-pill); cursor: pointer;
+  background: transparent; color: var(--sdb-text-secondary);
+  font-family: inherit; font-size: var(--sdb-text-sm);
+  transition: background var(--sdb-dur-fast) var(--sdb-ease-out), color var(--sdb-dur-fast) var(--sdb-ease-out);
+}
+.seg__i[aria-pressed='true'] { background: var(--sdb-surface); color: var(--sdb-text); font-weight: 600; box-shadow: var(--sdb-shadow-sm); }
+
+/* ---------- 开关 ---------- */
+.sw {
+  flex: none; width: 46px; height: 28px; border-radius: var(--sdb-radius-pill);
+  border: none; cursor: pointer; background: var(--sdb-border); position: relative;
+  transition: background var(--sdb-dur) var(--sdb-ease-out);
+}
+.sw::after {
+  content: ''; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px;
+  border-radius: 50%; background: #fff; box-shadow: 0 1px 3px oklch(45% 0.1 45 / .3);
+  transition: transform var(--sdb-dur) var(--sdb-ease-out);
+}
+.sw[aria-pressed='true'] { background: var(--sdb-primary); }
+.sw[aria-pressed='true']::after { transform: translateX(18px); }
+
+/* ---------- 模板磁贴 ---------- */
+.tpls { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.tpl {
+  border: 1.5px solid var(--sdb-border); border-radius: var(--sdb-radius-sm);
+  background: var(--sdb-surface); padding: 8px 4px 6px; cursor: pointer;
+  font-family: inherit; font-size: 11px; color: var(--sdb-text-secondary);
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  transition: border-color var(--sdb-dur-fast) var(--sdb-ease-out), transform var(--sdb-dur-fast) var(--sdb-ease-out);
+}
+.tpl:hover { transform: translateY(-1px); }
+.tpl[aria-pressed='true'] { border-color: var(--sdb-primary); color: var(--sdb-text); font-weight: 600; box-shadow: var(--sdb-shadow-sm); }
+.tpl__thumb { width: 100%; height: 40px; border-radius: 6px; background: var(--sdb-surface-2); display: flex; flex-direction: column; gap: 3px; padding: 6px 5px; }
+.tpl__thumb i { display: block; height: 3px; border-radius: 2px; background: var(--sdb-text-tertiary); opacity: .55; }
+.tpl__thumb i:nth-child(1) { width: 70%; }
+.tpl__thumb i:nth-child(2) { width: 100%; }
+.tpl__thumb i:nth-child(3) { width: 45%; }
+.tpl:nth-child(1) .tpl__thumb { background: repeating-linear-gradient(var(--sdb-surface-2) 0 6px, color-mix(in oklch, var(--sdb-primary) 12%, var(--sdb-surface-2)) 6px 7px); }
+.tpl:nth-child(3) .tpl__thumb { border: 1px solid var(--sdb-border); }
+
+/* ---------- 折叠区 ---------- */
+.fold__head { display: flex; align-items: center; gap: 12px; width: 100%; padding: 9px 10px; border: none; background: transparent; cursor: pointer; font-family: inherit; font-size: var(--sdb-text-base); color: var(--sdb-text); }
+.fold__head:hover { background: var(--sdb-surface-2); border-radius: var(--sdb-radius-sm); }
+.fold__caret { flex: none; font-size: 11px; color: var(--sdb-text-tertiary); transition: transform var(--sdb-dur) var(--sdb-ease-out); }
+.fold.is-open .fold__caret { transform: rotate(90deg); }
+.fold__body { display: none; padding: 4px 10px 10px; }
+.fold.is-open .fold__body { display: block; animation: sdb-rise var(--sdb-dur) var(--sdb-ease-out) both; }
+@keyframes sdb-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.fold__note { font-size: 11px; line-height: 1.6; color: var(--sdb-text-tertiary); margin: 0 0 10px; }
+.btnrow { display: flex; gap: 8px; }
+.btn {
+  flex: 1; min-height: 38px; padding: 0 14px; cursor: pointer;
+  border-radius: var(--sdb-radius-pill); font-family: inherit; font-size: var(--sdb-text-sm); font-weight: 600;
+  border: 1px solid var(--sdb-border); background: var(--sdb-surface); color: var(--sdb-text);
+  transition: transform var(--sdb-dur-fast) var(--sdb-ease-out);
+}
+.btn:active { transform: translateY(1px); }
+.btn--primary { background: var(--sdb-primary); border-color: var(--sdb-primary); color: var(--sdb-on-primary); }
+
+/* ---------- chips（关于） ---------- */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; cursor: pointer;
+  border-radius: var(--sdb-radius-pill); border: 1px solid var(--sdb-border);
+  background: var(--sdb-surface); color: var(--sdb-text);
+  font-family: inherit; font-size: var(--sdb-text-sm);
+  transition: border-color var(--sdb-dur-fast) var(--sdb-ease-out);
+}
+.chip:hover { border-color: var(--sdb-primary); color: var(--sdb-primary); }
+.chip em { font-style: normal; font-size: 13px; }
+
+/* ---------- 设计标注 ---------- */
+.note {
+  display: none; margin: 10px 0 0; padding: 9px 11px;
+  border: 1px dashed var(--sdb-primary); border-radius: var(--sdb-radius-sm);
+  background: color-mix(in oklch, var(--sdb-primary) 7%, transparent);
+  font-size: 11.5px; line-height: 1.65; color: var(--sdb-text-secondary);
+}
+.note b { color: var(--sdb-primary); }
+body.show-notes .note { display: block; }
+
+/* ---------- 模拟底部弹层 ---------- */
+.sheet {
+  position: absolute; inset: 0; z-index: 50; display: none;
+  background: oklch(20% 0.02 40 / .4);
+}
+.sheet.is-open { display: block; animation: fade var(--sdb-dur) var(--sdb-ease-out) both; }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+.sheet__panel {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  background: var(--sdb-surface); border-radius: var(--sdb-radius-lg) var(--sdb-radius-lg) 0 0;
+  padding: 14px 14px calc(16px + env(safe-area-inset-bottom, 0));
+  animation: up var(--sdb-dur) var(--sdb-ease-out) both;
+}
+@keyframes up { from { transform: translateY(100%); } to { transform: none; } }
+.sheet__title { text-align: center; font-weight: 600; margin-bottom: 8px; }
+.sheet__i {
+  width: 100%; padding: 13px 12px; border: none; background: transparent; cursor: pointer;
+  font-family: inherit; font-size: var(--sdb-text-base); color: var(--sdb-text); text-align: left;
+  border-radius: var(--sdb-radius-sm);
+}
+.sheet__i + .sheet__i { box-shadow: inset 0 1px 0 var(--sdb-border); }
+.sheet__i[aria-pressed='true'] { color: var(--sdb-primary); font-weight: 600; }
+</style>
+</head>
+<body class="vp-phone">
+
+<!-- ================= 实验台控制条（原型专用，非 App 内容） ================= -->
+<div class="lab">
+  <span class="lab__title">设置页重排原型 v1</span>
+  <div class="lab__group">
+    <span>视口</span>
+    <button data-vp="phone" aria-pressed="true">手机 390</button>
+    <button data-vp="tablet" aria-pressed="false">平板 840</button>
+    <button data-vp="desktop" aria-pressed="false">桌面 1240</button>
+  </div>
+  <div class="lab__group">
+    <span>主题</span>
+    <button data-theme="light" aria-pressed="true">浅色</button>
+    <button data-theme="dark" aria-pressed="false">深色</button>
+  </div>
+  <div class="lab__group">
+    <button id="notesBtn" aria-pressed="false">显示设计标注</button>
+  </div>
+  <span class="lab__hint">点击行 / 开关 / 磁贴可交互；切桌面看双栏</span>
+</div>
+
+<!-- ================= App 内容 ================= -->
+<div class="stage">
+  <div class="device" id="device">
+
+    <div class="shell">
+      <!-- 侧栏（≥768 出现） -->
+      <aside class="sidebar">
+        <div class="sb__brand">
+          <div class="sb__logo">水</div>
+          <div class="sb__name">水电动账</div>
+        </div>
+        <div class="sb__pill"><span class="sb__ico">🏠</span><span>首页</span></div>
+        <div class="sb__pill"><span class="sb__ico">📋</span><span>读数</span></div>
+        <div class="sb__pill"><span class="sb__ico">🧾</span><span>账单</span></div>
+        <div class="sb__pill"><span class="sb__ico">📈</span><span>统计</span></div>
+        <div class="sb__pill"><span class="sb__ico">🎯</span><span>预算</span></div>
+        <div class="sb__pill is-on"><span class="sb__ico">⚙️</span><span>设置</span></div>
+      </aside>
+
+      <div class="col">
+        <header class="hdr">
+          <div class="hdr__title">设置</div>
+          <div class="hdr__spacer"></div>
+          <button class="hdr__btn" id="themeBtn" title="切换主题">🌙</button>
+        </header>
+
+        <main class="main">
+          <h1 class="page-title">设置</h1>
+
+          <!-- ---------- 概览 / 身份卡 ---------- -->
+          <section class="card ov">
+            <div class="ov__top">
+              <div class="ov__badge">账</div>
+              <div class="ov__meta">
+                <div class="ov__label">当前房源</div>
+                <div class="ov__name">城中村 · A 栋 302</div>
+                <div class="ov__sub">共 3 处房源 · 最早记录于 2026-03</div>
+              </div>
+              <span class="ov__sync"><i></i>已同步</span>
+            </div>
+            <div class="ov__stats">
+              <div class="stat"><span class="stat__n">128</span><span class="stat__l">读数</span></div>
+              <div class="stat"><span class="stat__n">12</span><span class="stat__l">账单</span></div>
+              <div class="stat"><span class="stat__n">3</span><span class="stat__l">房源</span></div>
+              <div class="stat"><span class="stat__n stat__n--sm">2 小时前</span><span class="stat__l">上次同步</span></div>
+            </div>
+            <p class="note">
+              <b>新增</b>：进设置先看到「我在记哪本账」。原页面一进来就是房源管理列表，缺少上下文；
+              这里用手写体房源名做记忆点，四个小指标（读数 / 账单 / 房源 / 上次同步）回答"数据健不健康"，
+              右上角同步状态点复用已有 sync store 状态。卡片高度控制在 ~130px，不喧宾夺主。
+            </p>
+          </section>
+
+          <div class="grid">
+
+            <!-- ---------- 房源 ---------- -->
+            <section class="card card--sec span2">
+              <span class="tape"></span>
+              <h2 class="sec__title">房源 <small>点一下切换</small></h2>
+
+              <div class="prem is-on">
+                <div class="prem__av">城</div>
+                <div class="prem__txt">
+                  <div class="prem__n">城中村 · A 栋 302</div>
+                  <div class="prem__d">128 条读数 · 上次记录 8/26</div>
+                </div>
+                <span class="prem__tag">当前</span>
+                <div class="prem__ops">
+                  <button class="prem__op" title="编辑">✎</button>
+                </div>
+              </div>
+              <div class="prem">
+                <div class="prem__av">父</div>
+                <div class="prem__txt">
+                  <div class="prem__n">父母家 · 老屋</div>
+                  <div class="prem__d">46 条读数 · 上次记录 7/31</div>
+                </div>
+                <div class="prem__ops">
+                  <button class="prem__op" title="编辑">✎</button>
+                  <button class="prem__op" title="删除">🗑</button>
+                </div>
+              </div>
+              <div class="prem">
+                <div class="prem__av">店</div>
+                <div class="prem__txt">
+                  <div class="prem__n">店铺 · 西街 12 号</div>
+                  <div class="prem__d">9 条读数 · 上次记录 8/20</div>
+                </div>
+                <div class="prem__ops">
+                  <button class="prem__op" title="编辑">✎</button>
+                  <button class="prem__op" title="删除">🗑</button>
+                </div>
+              </div>
+              <button class="add">＋ 新增房源</button>
+
+              <p class="note">
+                <b>变化</b>：房源是最高频操作，放在第一个分区卡，桌面下<b>跨两列</b>。
+                行高从「列表卡片」压到 52px，读数条数与「上次记录」合并成一行副标题，删掉原来的卡片套卡片。
+                当前房源用主色圆章 + 「当前」chip 表达，不再靠边框。最后一个房源仍不可删（保持既有红线）。
+              </p>
+            </section>
+
+            <!-- ---------- 外观 ---------- -->
+            <section class="card card--sec">
+              <span class="tape"></span>
+              <h2 class="sec__title">外观</h2>
+              <div class="seg" id="themeSeg">
+                <button class="seg__i" data-v="light" aria-pressed="true">浅色</button>
+                <button class="seg__i" data-v="dark" aria-pressed="false">深色</button>
+                <button class="seg__i" data-v="auto" aria-pressed="false">跟随系统</button>
+              </div>
+              <p class="note">
+                <b>变化</b>：主题从「点开 action-sheet 再选」改成卡内三段控件，<b>少一次点击</b>；
+                三档本来就互斥且数量固定，适合直接铺开。选中态用「浮起纸片 + 柔影」，延续便签感而非 iOS 绿。
+              </p>
+            </section>
+
+            <!-- ---------- 行为 ---------- -->
+            <section class="card card--sec">
+              <span class="tape"></span>
+              <h2 class="sec__title">行为</h2>
+              <button class="row">
+                <span class="row__ico">⚡</span>
+                <span class="row__txt">
+                  <span class="row__t">启动自动弹快速记录</span>
+                  <span class="row__d">每天首次打开自动记一笔</span>
+                </span>
+                <span class="sw" id="autoPop" role="switch" aria-pressed="true" aria-label="启动自动弹快速记录"></span>
+              </button>
+              <button class="row" id="viewRow">
+                <span class="row__ico">🧭</span>
+                <span class="row__txt"><span class="row__t">默认视图</span></span>
+                <span class="row__v" id="viewVal">首页</span>
+                <span class="row__chev">›</span>
+              </button>
+              <p class="note">
+                <b>变化</b>：给每行加<b>图标 + 副标题</b>（原来只有标题 + 值，含义要靠猜）。
+                开关行整行可点、但开关本体是独立命中区；「默认视图」保留 action-sheet（5 项、需上下文）。
+              </p>
+            </section>
+
+            <!-- ---------- 账单 ---------- -->
+            <section class="card card--sec">
+              <span class="tape"></span>
+              <h2 class="sec__title">账单</h2>
+              <div class="tpls" id="tpls">
+                <button class="tpl" data-v="receipt" aria-pressed="true"><span class="tpl__thumb"><i></i><i></i><i></i></span>小票风</button>
+                <button class="tpl" data-v="minimal" aria-pressed="false"><span class="tpl__thumb"><i></i><i></i><i></i></span>极简风</button>
+                <button class="tpl" data-v="card" aria-pressed="false"><span class="tpl__thumb"><i></i><i></i><i></i></span>卡片风</button>
+                <button class="tpl" data-v="report" aria-pressed="false"><span class="tpl__thumb"><i></i><i></i><i></i></span>报表风</button>
+              </div>
+              <p class="note">
+                <b>变化</b>：模板是「看得见的偏好」，用四个带缩略示意（齿边/纯色/描边/表格）的磁贴一眼挑，
+                替代原来要逐个点开试的纯文字选择。缩略图只是 CSS 画的占位，实现时可直接复用模板组件渲染真实缩略。
+              </p>
+            </section>
+
+            <!-- ---------- 数据 ---------- -->
+            <section class="card card--sec">
+              <span class="tape"></span>
+              <h2 class="sec__title">数据 <small>本地优先 · 可随时带走</small></h2>
+              <button class="row">
+                <span class="row__ico">💧</span>
+                <span class="row__txt"><span class="row__t">水电单价</span></span>
+                <span class="row__v">水 3.5 / 电 0.68</span>
+                <span class="row__chev">›</span>
+              </button>
+              <button class="row">
+                <span class="row__ico">🔁</span>
+                <span class="row__txt">
+                  <span class="row__t">数据同步</span>
+                  <span class="row__d">坚果云 · 已开启</span>
+                </span>
+                <span class="row__v">已同步</span>
+                <span class="row__chev">›</span>
+              </button>
+              <button class="row">
+                <span class="row__ico">📤</span>
+                <span class="row__txt"><span class="row__t">导出数据</span></span>
+                <span class="row__chev">›</span>
+              </button>
+              <button class="row">
+                <span class="row__ico">📥</span>
+                <span class="row__txt">
+                  <span class="row__t">导入数据</span>
+                  <span class="row__d">按 LWW 合并，新数据优先</span>
+                </span>
+                <span class="row__chev">›</span>
+              </button>
+
+              <div class="fold" id="keyFold">
+                <button class="fold__head">
+                  <span class="row__ico">🔑</span>
+                  <span class="row__txt"><span class="row__t">设备密钥备份</span></span>
+                  <span class="fold__caret">›</span>
+                </button>
+                <div class="fold__body">
+                  <p class="fold__note">
+                    换机或重装时用它恢复加密数据。备份文件由你设置的口令二次加密，设备密钥明文不会离开本机。
+                    上次备份：2026-08-12 21:40
+                  </p>
+                  <div class="btnrow">
+                    <button class="btn btn--primary">导出备份</button>
+                    <button class="btn">导入备份</button>
+                  </div>
+                </div>
+              </div>
+
+              <p class="note">
+                <b>变化</b>：同步 / 单价补上副标题（连的是哪个服务、当前单价多少），不用点进去才知道状态。
+                <b>设备密钥备份默认折叠</b>——它是低频且带风险提示的操作，原来平铺占半屏；
+                折叠后仍在同一张卡里，展开即见说明与两个按钮，红线文案一条不减。
+              </p>
+            </section>
+
+            <!-- ---------- 关于 ---------- -->
+            <section class="card card--sec">
+              <span class="tape"></span>
+              <h2 class="sec__title">关于</h2>
+              <button class="row">
+                <span class="row__ico">🏷️</span>
+                <span class="row__txt"><span class="row__t">版本</span></span>
+                <span class="row__v">0.1.0</span>
+              </button>
+              <div class="chips">
+                <button class="chip"><em>✍️</em>作者信息</button>
+                <button class="chip"><em>💛</em>开源鸣谢</button>
+                <button class="chip"><em>🎓</em>重看引导</button>
+                <button class="chip"><em>📲</em>安装到桌面</button>
+              </div>
+              <p class="note">
+                <b>变化</b>：作者 / 鸣谢 / 引导 / 安装这四项都是「弹一下就完事」的低频动作，
+                从四行列表压成一行胶囊 chips，<b>省掉约 150px 纵向空间</b>，也让"关于"区不再像设置项。
+                鸣谢点开后走系统浏览器（本次确认的方案）。
+              </p>
+            </section>
+
+          </div>
+        </main>
+
+        <!-- 底部 TabBar -->
+        <nav class="tabbar">
+          <button class="tabbar__i"><em>🏠</em>首页</button>
+          <button class="tabbar__i"><em>📋</em>读数</button>
+          <button class="tabbar__i"><em>🧾</em>账单</button>
+          <button class="tabbar__i"><em>📈</em>统计</button>
+          <button class="tabbar__i"><em>🎯</em>预算</button>
+          <button class="tabbar__i is-on"><em>⚙️</em>设置</button>
+        </nav>
+      </div>
+    </div>
+
+    <!-- 模拟 action-sheet（默认视图） -->
+    <div class="sheet" id="sheet">
+      <div class="sheet__panel" id="sheetPanel">
+        <div class="sheet__title">选择默认视图</div>
+        <button class="sheet__i" data-v="首页" aria-pressed="true">首页</button>
+        <button class="sheet__i" data-v="读数" aria-pressed="false">读数</button>
+        <button class="sheet__i" data-v="账单" aria-pressed="false">账单</button>
+        <button class="sheet__i" data-v="统计" aria-pressed="false">统计</button>
+        <button class="sheet__i" data-v="预算" aria-pressed="false">预算</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+(function () {
+  var body = document.body;
+  var device = document.getElementById('device');
+  var FRAME = { phone: '390px', tablet: '840px', desktop: '100%' };
+
+  // ---- 视口 ----
+  document.querySelectorAll('[data-vp]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var vp = b.dataset.vp;
+      body.className = body.className.replace(/\bvp-\w+\b/, '') + ' vp-' + vp;
+      device.style.setProperty('--frame-w', FRAME[vp]);
+      document.querySelectorAll('[data-vp]').forEach(function (o) {
+        o.setAttribute('aria-pressed', String(o === b));
+      });
+    });
+  });
+
+  // ---- 主题（控制条 + 顶栏按钮 + 分段控件 三方联动）----
+  function setTheme(mode) {
+    var real = mode === 'auto'
+      ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+      : mode;
+    document.documentElement.setAttribute('data-theme', real);
+    document.getElementById('themeBtn').textContent = real === 'dark' ? '☀️' : '🌙';
+    document.querySelectorAll('#themeSeg .seg__i').forEach(function (o) {
+      o.setAttribute('aria-pressed', String(o.dataset.v === mode));
+    });
+    document.querySelectorAll('.lab [data-theme]').forEach(function (o) {
+      o.setAttribute('aria-pressed', String(o.dataset.theme === real));
+    });
+  }
+  document.querySelectorAll('.lab [data-theme]').forEach(function (b) {
+    b.addEventListener('click', function () { setTheme(b.dataset.theme); });
+  });
+  document.getElementById('themeBtn').addEventListener('click', function () {
+    var cur = document.documentElement.getAttribute('data-theme');
+    setTheme(cur === 'dark' ? 'light' : 'dark');
+  });
+  document.querySelectorAll('#themeSeg .seg__i').forEach(function (b) {
+    b.addEventListener('click', function () { setTheme(b.dataset.v); });
+  });
+
+  // ---- 设计标注 ----
+  var notesBtn = document.getElementById('notesBtn');
+  notesBtn.addEventListener('click', function () {
+    var on = body.classList.toggle('show-notes');
+    notesBtn.setAttribute('aria-pressed', String(on));
+  });
+
+  // ---- 开关 ----
+  var autoPop = document.getElementById('autoPop');
+  autoPop.addEventListener('click', function (e) {
+    e.stopPropagation();
+    autoPop.setAttribute('aria-pressed', String(autoPop.getAttribute('aria-pressed') !== 'true'));
+  });
+
+  // ---- 模板磁贴 ----
+  document.querySelectorAll('#tpls .tpl').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#tpls .tpl').forEach(function (o) {
+        o.setAttribute('aria-pressed', String(o === b));
+      });
+    });
+  });
+
+  // ---- 折叠区 ----
+  var keyFold = document.getElementById('keyFold');
+  keyFold.querySelector('.fold__head').addEventListener('click', function () {
+    keyFold.classList.toggle('is-open');
+  });
+
+  // ---- action-sheet ----
+  var sheet = document.getElementById('sheet');
+  var viewVal = document.getElementById('viewVal');
+  document.getElementById('viewRow').addEventListener('click', function () {
+    sheet.classList.add('is-open');
+  });
+  sheet.addEventListener('click', function (e) {
+    if (e.target === sheet) { sheet.classList.remove('is-open'); return; }
+    var item = e.target.closest('.sheet__i');
+    if (!item) return;
+    viewVal.textContent = item.dataset.v;
+    document.querySelectorAll('.sheet__i').forEach(function (o) {
+      o.setAttribute('aria-pressed', String(o === item));
+    });
+    sheet.classList.remove('is-open');
+  });
+
+  setTheme('light');
+})();
+</script>
+</body>
+</html>

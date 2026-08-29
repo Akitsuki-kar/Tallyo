@@ -116,6 +116,57 @@ export const useReadingsStore = defineStore('readings', () => {
     }
   }
 
+  /**
+   * 重建读数链并落库（只修 previousReading，不触发账单重算）。
+   *
+   * 存在意义：同步 / 导入的合并是「按实体逐个 LWW 取胜者」写入的，
+   * 中途插入的读数会让既有记录的 previousReading 失效——链变了，字段却没跟着更新。
+   * 账单金额不受影响（monthlyUsage 是按日期现算的派生值），
+   * 但读数列表的「用量」列读的正是 previousReading，会一直显示旧链的错值，
+   * 直到用户手动编辑某条读数才被顺带修正。
+   *
+   * relinkChain 是确定性纯函数（仅写「值确实变了」的记录），故两端各自重链结果一致，
+   * 收敛后不再产生写入与事件，不会与同步形成乒乓。
+   *
+   * @param premiseIds 限定房源；省略则重链全部房源
+   * @param emitEvent  是否广播 READING_CHANGED。同步上传前调用时应传 false：
+   *                   修正结果马上就要进本轮上传的快照，再广播只会让自动同步
+   *                   在结束时补推一轮「其实已经推上去了」的重复同步。
+   * @returns 实际被修正的读数条数
+   */
+  async function relinkChains(premiseIds?: string[], emitEvent = true): Promise<number> {
+    const pairs = new Set<string>();
+    for (const r of items.value) {
+      if (r.isDeleted) continue;
+      if (premiseIds && !premiseIds.includes(r.premiseId)) continue;
+      pairs.add(`${r.premiseId}\u0000${r.type}`); // \u0000 分隔，防 id 内含冒号碰撞
+    }
+
+    let changedCount = 0;
+    for (const pair of pairs) {
+      const [premiseId, type] = pair.split('\u0000') as [string, ReadingType];
+      const changed = relinkChain(items.value, premiseId, type);
+      for (const rec of changed) {
+        const updated: Reading = {
+          ...rec,
+          updatedAt: new Date().toISOString(),
+          syncVersion: (rec.syncVersion ?? 0) + 1,
+        };
+        await readingRepo.putReading(updated);
+        const mem = items.value.find((r) => r.id === updated.id);
+        if (mem) Object.assign(mem, updated);
+        changedCount++;
+      }
+    }
+
+    // 仅在确有修正时发事件：既让自动同步把修正后的链推上去，
+    // 也保证收敛后不会每轮同步都白跑一次。
+    if (changedCount > 0 && emitEvent) {
+      eventBus.emit(EVENTS.READING_CHANGED, undefined);
+    }
+    return changedCount;
+  }
+
   async function addReading(payload: ReadingPayload): Promise<Reading> {
     // A2：改用按日期严格早于的 findPreviousReading，而非 latestByType
     const prev = findPreviousReading(items.value, payload.premiseId, payload.type, payload.date);
@@ -237,6 +288,7 @@ export const useReadingsStore = defineStore('readings', () => {
     latestByType,
     usageOf,
     load,
+    relinkChains,
     addReading,
     updateReading,
     removeReading,

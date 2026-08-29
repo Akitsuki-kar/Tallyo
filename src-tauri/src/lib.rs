@@ -8,7 +8,13 @@
 pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_fs::init());
+        .plugin(tauri_plugin_fs::init())
+        // 原生 HTTP（WebDAV 同步用）：走 Rust reqwest，无浏览器 CORS/CSP 限制，
+        // 桌面/移动壳可直连 https://dav.jianguoyun.com/dav/...（前端 httpTransport.ts 自动切换）。
+        .plugin(tauri_plugin_http::init())
+        // 外链调起系统默认浏览器（Android → ACTION_VIEW / Custom Tabs，桌面 → 默认浏览器），
+        // 避免原生壳 WebView 内导航「无地址栏、回不到 App」（鸣谢等外链；前端 openExternal.ts 调用）。
+        .plugin(tauri_plugin_opener::init());
 
     // keyring 依赖见 Cargo.toml 的桌面专属依赖表：安卓/iOS 目标不编译该 crate，
     // 此处用 tauri-build 提供的 desktop cfg 同步门控注册，避免移动端链接失败。

@@ -46,6 +46,8 @@ export default defineConfig({
           external: [
             '@tauri-apps/plugin-dialog',
             '@tauri-apps/plugin-fs',
+            '@tauri-apps/plugin-http',
+            '@tauri-apps/plugin-opener',
             'tauri-plugin-keyring-api',
           ],
         },
@@ -62,7 +64,7 @@ export default defineConfig({
   server: {
     // 坚果云 WebDAV 不返回 CORS 头，浏览器直连会被拦截。
     // 开发期走同源本地代理（/dav → 坚果云），App 填 /dav/... 即可，不涉及跨域。
-    // 注意：Tauri 原生壳不经由浏览器，可绕过此代理直连 WebDAV（见 docs/native-shell.md）。
+    // 注意：Tauri 原生壳走 tauri-plugin-http 原生通道（不经浏览器），可直连完整 HTTPS 地址（见 docs/webdav-setup.md）。
     proxy: {
       '/dav': {
         target: 'https://dav.jianguoyun.com',

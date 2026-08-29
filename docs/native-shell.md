@@ -18,10 +18,10 @@ Tauri 因复用系统 WebView，体积与内存远低于「打包引擎」类方
 
 ```
 src-tauri/                # Rust 原生壳（独立于 Vue 代码）
-├─ Cargo.toml             # Rust 依赖：tauri + tauri-plugin-dialog + tauri-plugin-fs + tauri-plugin-keyring（按需，最小集）
+├─ Cargo.toml             # Rust 依赖：tauri + tauri-plugin-dialog + tauri-plugin-fs + tauri-plugin-opener + tauri-plugin-keyring（按需，最小集）
 ├─ tauri.conf.json        # 产物名 Tallyo、identifier com.tallyo.app、前端指向 ../dist
 ├─ build.rs
-├─ capabilities/default.json   # 权限：core:default + dialog:default + fs:allow-write-file + keyring:allow-*-password
+├─ capabilities/default.json   # 权限：core:default + dialog:default + opener:default + fs:allow-write-file + keyring:allow-*-password
 ├─ icons/icon.png         # 图标源（复用 PWA 图标，需一键生成各平台图标）
 └─ src/{main.rs,lib.rs}   # 入口：挂载 WebView 与 dialog/fs/keyring 插件
 ```
@@ -69,10 +69,10 @@ npm run tauri:build
 
 ## WebDAV 直连（顺带解决「是否必须 Nginx」）
 
-浏览器有 CORS 限制，所以 Web/PWA 版必须走同源反代（`/dav/` → 坚果云）。但 **Tauri 原生壳没有浏览器 CORS 概念**，HTTP 层由 Rust 直接发起，因此 App 可**直连你的 WebDAV 地址**（如 `https://dav.jianguoyun.com/...`），不再需要部署 Nginx 反代。
+浏览器有 CORS 限制，所以 Web/PWA 版必须走同源反代（`/dav/` → 坚果云）。但 Tauri 原生壳接入 **`tauri-plugin-http` 原生 HTTP 通道**（`src/native/httpTransport.ts` 自动切换：WebDAV 请求由 Rust reqwest 直接发起，不经 WebView），**没有浏览器 CORS 概念**，因此 App 可**直连你的 WebDAV 地址**（如 `https://dav.jianguoyun.com/dav/...`），不再需要部署 Nginx 反代。
 
-- 在原生壳里，把同步设置中的服务器地址填为 WebDAV 完整 HTTPS 地址即可。
-- 对应 CSP 已在 Tauri 模式放开 `connect-src https:`，不会被拦。
+- 在原生壳里，把同步设置中的服务器地址填为 WebDAV 完整 HTTPS 地址即可（填相对路径会提示错误）。
+- 原生 HTTP 请求不受 WebView CSP 约束（`tauri.conf.json` 的 `csp` 本就为 `null`）；`connect-src https:` 的放宽仅兜底 WebView 内其他请求。
 
 ## 已落地的原生增强
 
@@ -88,9 +88,15 @@ npm run tauri:build
    - Tauri 模式用 `@tauri-apps/plugin-dialog` 的 `save()` 弹出系统保存对话框，再用 `@tauri-apps/plugin-fs` 的 `writeFile()` 把 jsPDF 字节写入用户选定路径；体验优于浏览器「下载」弹层。
    - 用户在对话框取消则**不落盘**；原生调用失败自动回退浏览器 `pdf.save()`。
 
+3. **外链调起系统浏览器**（`src/native/openExternal.ts` + `CreditsPopup.vue`）
+   - **根因**：原生壳 WebView 里直接写 `<a target="_blank">` 不会被系统浏览器接管。Android 侧走 `WebChromeClient.onCreateWindow`，结果是「在同一个 WebView 内导航」过去——没有地址栏、没有返回键、回不到 App，正是鸣谢等外链在原生壳里表现「怪异」的原因。
+   - **方案**：Tauri 模式经 `tauri-plugin-opener` 的 `openUrl()` 调起系统默认浏览器（Android = `ACTION_VIEW` → Chrome Custom Tabs / 默认浏览器；桌面 = 默认浏览器），离开 App 但可一键返回。Web 模式回退 `window.open`（新标签），失败给「复制链接」兜底。
+   - `main.ts` 在入口安装 `installExternalLinkInterceptor()`：在 `document` 上做 click 委托，命中 `<a href="http(s)://">` 就 `preventDefault` 并转 `openExternal()`，全站外链统一走系统浏览器，无需逐个改造 `<a>`。
+   - 权限仅 `opener:default`（已含 `allow-open-url` / `allow-default-urls`，放行 https/http）。
+
 ### Web 包保持最精简（关键约束）
 
-`secureKey.ts` / `pdf.ts` 对 Tauri 专有包（`@tauri-apps/plugin-dialog`、`@tauri-apps/plugin-fs`、`tauri-plugin-keyring-api`）均用**字面量动态 `import()`**，并在 `vite.config.ts` 中：
+`secureKey.ts` / `pdf.ts` / `openExternal.ts` 对 Tauri 专有包（`@tauri-apps/plugin-dialog`、`@tauri-apps/plugin-fs`、`tauri-plugin-keyring-api`、`@tauri-apps/plugin-opener`）均用**字面量动态 `import()`**，并在 `vite.config.ts` 中：
 - **Web/PWA 构建**（`!TAURI_BUILD`）：把这些 specifier 列入 `build.rollupOptions.external`，Rollup 不解析、不打包它们；且调用点被 `isTauriShell()` 守卫，浏览器运行期永不执行 → web 包不掺任何 Tauri 代码。
 - **Tauri 构建**（`TAURI_BUILD=1`）：不 external，字面量被正常打包进原生壳供运行期使用。
 

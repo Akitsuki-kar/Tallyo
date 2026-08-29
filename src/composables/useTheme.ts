@@ -99,13 +99,19 @@ export function useTheme() {
     applyThemeMode(mode);
   }
 
-  function toggle(): void {
+  /**
+   * 在 light ↔ dark 之间切换（不经过 auto）。
+   * @returns 切换后的模式，供调用方落库（见 App.vue onToggleTheme）
+   */
+  function toggle(): ThemeMode {
     // toggle 在 light ↔ dark 之间切换，不经过 auto
     const current =
       ((typeof document !== 'undefined'
         ? document.documentElement.getAttribute('data-theme')
         : null) as ResolvedTheme) || 'light';
-    applyThemeMode(current === 'dark' ? 'light' : 'dark');
+    const next: ThemeMode = current === 'dark' ? 'light' : 'dark';
+    applyThemeMode(next);
+    return next;
   }
 
   function setTheme(mode: ThemeMode): void {

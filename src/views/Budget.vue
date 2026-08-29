@@ -19,7 +19,8 @@ import { showSuccessToast, showToast } from 'vant';
 import { usePremisesStore } from '@/stores/premises';
 import { useBillsStore } from '@/stores/bills';
 import { useBudgetsStore } from '@/stores/budgets';
-import { monthKey, formatMonthLabel } from '@/utils/dayjs';
+import { useReadingsStore } from '@/stores/readings';
+import { monthKey, monthKeyFromDate, formatMonthLabel } from '@/utils/dayjs';
 import { formatCurrency, formatNumber } from '@/utils/format';
 import type { BudgetMode } from '@/types';
 import PremiseSelector from '@/components/common/PremiseSelector.vue';
@@ -30,6 +31,7 @@ import BudgetWarning from '@/components/budget/BudgetWarning.vue';
 const premisesStore = usePremisesStore();
 const billsStore = useBillsStore();
 const budgetsStore = useBudgetsStore();
+const readingsStore = useReadingsStore();
 
 const { currentPremiseId } = storeToRefs(premisesStore);
 
@@ -78,7 +80,8 @@ const electricityProgress = computed(() => {
   const budget = currentBudget.value;
   const isAmount = formMode.value === 'amount';
   const actual = bill ? (isAmount ? bill.electricityCost : bill.electricityUsage) : 0;
-  const limit = budget ? (formMode.value === 'amount' ? budget.electricityLimit : budget.electricityLimit) : 0;
+  // 限额在两种口径下共用同一字段（amount=元 / usage=度或吨），故无需按 formMode 分支
+  const limit = budget ? budget.electricityLimit : 0;
   return { actual, limit };
 });
 
@@ -113,14 +116,17 @@ function statusBadge(status: string): { text: string; icon: string; cls: string 
 }
 
 // ---- 保存预算 ----
+// 允许清空：两项上限同时为 0（或留空）即回到「不约束」状态——
+// budgets.statusForBill / ratioFor 均以 limit > 0 为生效前提，
+// 因此 0 是天然、无需额外开关的「关闭预算」取值。
 async function onSave(): Promise<void> {
   if (!currentPremiseId.value) return;
-  const eLimit = parseFloat(formElectricityLimit.value) || 0;
-  const wLimit = parseFloat(formWaterLimit.value) || 0;
-  if (eLimit <= 0 && wLimit <= 0) {
-    showToast('至少填写一项预算上限');
-    return;
-  }
+  // 负数没有业务含义，统一钳到 0（等同于不设限）
+  const eLimit = Math.max(0, parseFloat(formElectricityLimit.value) || 0);
+  const wLimit = Math.max(0, parseFloat(formWaterLimit.value) || 0);
+  // 保存前是否已有生效预算，用于给出「已清空」而非「已保存」的措辞
+  const hadBudget = !!currentBudget.value && (currentBudget.value.electricityLimit > 0 || currentBudget.value.waterLimit > 0);
+  const cleared = eLimit <= 0 && wLimit <= 0;
   saving.value = true;
   try {
     await budgetsStore.setBudget(currentPremiseId.value, {
@@ -128,9 +134,19 @@ async function onSave(): Promise<void> {
       electricityLimit: eLimit,
       waterLimit: wLimit,
     });
-    // 预算变更后重算当月账单，使 budgetStatus 即时刷新
-    await billsStore.recompute(currentPremiseId.value, currentMonth.value);
-    showSuccessToast('预算已保存');
+    // 预算变更后重算该房源**所有有读数的月份**，而非只算当月：
+    // budgetStatus 是写在账单上的派生字段，只刷当月会让下方「近月预算执行」列表
+    // 里的历史徽章继续停留在旧状态（要等到下次同步/全量重算才更新）。
+    const pid = currentPremiseId.value;
+    const months = new Set<string>();
+    for (const r of readingsStore.items) {
+      if (!r.isDeleted && r.premiseId === pid) months.add(monthKeyFromDate(r.date));
+    }
+    months.add(currentMonth.value);
+    for (const m of months) {
+      await billsStore.recompute(pid, m);
+    }
+    showSuccessToast(cleared && hadBudget ? '预算已清空' : '预算已保存');
   } catch {
     showToast('保存失败，请重试');
   } finally {
@@ -258,6 +274,7 @@ watch(currentPremiseId, () => {
         </div>
       </div>
 
+      <p class="budget__note">两项都填 0 或留空即表示不设上限，保存后关闭该房源的预算预警。</p>
       <button class="sdb-btn sdb-btn--primary sdb-btn--block budget__save" :disabled="saving" @click="onSave">
         {{ saving ? '保存中…' : '保存预算' }}
       </button>
@@ -448,6 +465,12 @@ watch(currentPremiseId, () => {
   white-space: nowrap;
 }
 
+.budget__note {
+  margin: var(--sdb-space-2) 0 0;
+  font-size: var(--sdb-text-xs);
+  line-height: 1.6;
+  color: var(--sdb-text-tertiary);
+}
 .budget__save {
   margin-top: var(--sdb-space-2);
 }

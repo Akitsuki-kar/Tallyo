@@ -28,9 +28,14 @@ export async function exportElementToPdf(
     ]);
 
     // 捕获 DOM → canvas
+    // ⚠️ 必须启用 foreignObjectRendering：项目全部颜色 token 是 OKLCH（oklch()），
+    // 而 html2canvas 1.4.x 的 CSS 解析器不支持 OKLCH，普通模式下解析 computed style 会抛错
+    // （原生壳 Windows/Android 导出 PDF 失败的根因）。foreignObject 模式把克隆 DOM 放进
+    // SVG foreignObject 由浏览器原生渲染，支持 OKLCH/本地字体/纸纹，再截图输出。
     const canvas = await html2canvas(element, {
       scale: 2, // 2x 清晰度
       useCORS: true,
+      foreignObjectRendering: true,
       backgroundColor: getComputedStyle(document.body).backgroundColor || '#fff9f2',
       logging: false,
     });
@@ -68,28 +73,25 @@ export async function exportElementToPdf(
 
     // 导出：Tauri 原生壳走系统保存对话框，体验优于浏览器下载；Web 仍用浏览器下载。
     if (isTauriShell()) {
-      try {
-        // 字面量 specifier：Tauri 构建期由 Vite 正常打包进原生壳；Web 构建期被 vite.config 的
-        // rollupOptions.external 标为外部（不解析/不打包）。该分支被 isTauriShell() 守卫，浏览器永不执行。
-        const { save } = (await import('@tauri-apps/plugin-dialog')) as any;
-        const { writeFile } = (await import('@tauri-apps/plugin-fs')) as any;
-        const path = await save({
-          defaultPath: `${filename}.pdf`,
-          filters: [{ name: 'PDF', extensions: ['pdf'] }],
-        });
-        if (path) {
-          const bytes = pdf.output('arraybuffer') as ArrayBuffer;
-          await writeFile(path, new Uint8Array(bytes));
-          return;
-        }
-        // 用户在对话框取消：不落盘，直接返回（不触发浏览器下载）。
+      // 字面量 specifier：Tauri 构建期由 Vite 正常打包进原生壳；Web 构建期被 vite.config 的
+      // rollupOptions.external 标为外部（不解析/不打包）。该分支被 isTauriShell() 守卫，浏览器永不执行。
+      const { save } = (await import('@tauri-apps/plugin-dialog')) as {
+        save: (opts: Record<string, unknown>) => Promise<string | null>;
+      };
+      const { writeFile } = (await import('@tauri-apps/plugin-fs')) as {
+        writeFile: (path: string, data: Uint8Array) => Promise<void>;
+      };
+      const path = await save({
+        defaultPath: `${filename}.pdf`,
+        filters: [{ name: 'PDF', extensions: ['pdf'] }],
+      });
+      if (!path) {
+        // 用户在对话框取消：不落盘、不提示成功，也不回退浏览器下载（原生壳 WebView 下载无 UI，文件去向不可见）
         return;
-      } catch (e) {
-        logger.warn('[SDB:pdf]', '原生保存失败，回退浏览器下载', {
-          message: e instanceof Error ? e.message : String(e),
-        });
-        // 继续走下方浏览器下载兜底
       }
+      const bytes = pdf.output('arraybuffer') as ArrayBuffer;
+      await writeFile(path, new Uint8Array(bytes));
+      return;
     }
 
     pdf.save(`${filename}.pdf`);

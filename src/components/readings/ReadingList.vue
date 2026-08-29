@@ -165,6 +165,7 @@ async function confirmDelete(): Promise<void> {
           :min-date="minDate"
           :max-date="maxDate"
           :columns-type="['year', 'month']"
+          :show-toolbar="false"
         />
       </div>
     </van-popup>

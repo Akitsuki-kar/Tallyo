@@ -17,27 +17,23 @@ import { usePricesStore } from '@/stores/prices';
 import { useBudgetsStore } from '@/stores/budgets';
 import { useSettingsStore } from '@/stores/settings';
 import { logger } from '@/utils/logger';
+import { saveTextFile, type SaveTextResult } from '@/native/saveTextFile';
 
 /**
- * 导出全量数据为 JSON 文件并触发下载。
+ * 导出全量数据为 JSON 文件。
+ * - Tauri 原生壳：弹系统保存对话框，用户自选位置，返回完整路径（见 saveTextFile）。
+ * - Web / PWA：触发浏览器下载。
+ * - 用户在系统对话框取消：outcome='cancelled'（调用方不应提示成功）。
  */
-export async function exportData(): Promise<void> {
+export async function exportData(): Promise<SaveTextResult> {
   const snapshot = await buildLocalSnapshot();
   const json = JSON.stringify(snapshot, null, 2);
-  const blob = new Blob([json], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
 
   const now = new Date();
   const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
   const filename = `水电动账-${dateStr}.json`;
 
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  return saveTextFile(filename, json);
 }
 
 /**

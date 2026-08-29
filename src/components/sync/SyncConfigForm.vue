@@ -5,6 +5,7 @@ import { onMounted, reactive, ref } from 'vue';
 import { showToast } from 'vant';
 import { useSyncStore } from '@/stores/sync';
 import { useSettingsStore } from '@/stores/settings';
+import { isTauriShell } from '@/utils/platform';
 import type { SyncConfig } from '@/types';
 
 const emit = defineEmits<{ (e: 'saved'): void }>();
@@ -57,8 +58,10 @@ async function persistAndTest(): Promise<boolean> {
     showToast('请填写 WebDAV 地址与用户名');
     return false;
   }
-  // 同源反代（填 /dav/...）不会被浏览器安全策略拦截；跨域绝对地址在生产环境会被 CSP 拦截。
-  if (isCrossOrigin(form.url)) {
+  // 同源反代（填 /dav/...）不会被浏览器安全策略拦截；跨域绝对地址在 Web 生产会被 CSP 拦截。
+  // 原生壳（Tauri）走 tauri-plugin-http 原生通道，无浏览器 CORS/CSP 限制，可直连任意 HTTPS 地址（无需此警告）。
+  // 注意：原生壳内填相对路径不可用（无本地服务器解析），webdavClient 会提示填写完整 HTTPS 地址。
+  if (!isTauriShell() && isCrossOrigin(form.url)) {
     showToast('提示：检测到跨域地址，生产需同源反代（填 /dav/...），否则会被浏览器拦截');
   }
   const patch: Partial<SyncConfig> & { password?: string } = {
@@ -108,11 +111,14 @@ async function onTest(): Promise<void> {
 
 <template>
   <van-cell-group inset title="同步配置" class="sdb-sync-group">
-    <van-field v-model="form.url" label="WebDAV 地址" placeholder="如 /dav/我的应用（同源反代）或 https://..." :border="false">
-      <template #extra>
-        <span class="sdb-sync-hint">开发 / 生产均建议填同源反代路径 /dav/...</span>
-      </template>
-    </van-field>
+    <van-field
+      v-model="form.url"
+      label="WebDAV 地址"
+      placeholder="如 /dav/我的应用 或 https://..."
+      :border="false"
+    />
+    <!-- 提示语独立一行，避免挤占输入框（Vant #extra 插槽会渲染在输入框内、窄屏挤压） -->
+    <p class="sdb-sync-url-hint">Web 端填同源反代路径（如 /dav/...）；Windows / macOS 原生客户端直接填完整 HTTPS 地址（如 https://dav.jianguoyun.com/dav/水电动账）</p>
     <van-field v-model="form.username" label="用户名" placeholder="坚果云邮箱" :border="false" />
     <van-field
       v-model="form.password"
@@ -156,8 +162,10 @@ async function onTest(): Promise<void> {
 .sdb-sync-group {
   margin: 8px 0 16px;
 }
-.sdb-sync-hint {
+.sdb-sync-url-hint {
+  margin: 0 16px 10px;
   font-size: 11px;
+  line-height: 1.5;
   color: var(--sdb-text-secondary);
 }
 .sdb-sync-actions {

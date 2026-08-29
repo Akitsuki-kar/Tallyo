@@ -28,8 +28,8 @@
   --sdb-shadow: 0 8px 24px oklch(12% 0.02 40 / 0.45);
   --sdb-shadow-lg: 0 16px 40px oklch(10% 0.02 40 / 0.5);
 
-  /* 纸纹在深色下更隐（降透明度） */
-  --sdb-paper: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.025'/%3E%3C/svg%3E");
+  /* 纸纹贴片（见 variables.css 说明；深层噪点观感已内置于贴片 alpha，无需再调） */
+  --sdb-paper: url('/textures/paper-noise.png');
 
   --van-primary: var(--sdb-primary);
   --van-success: var(--sdb-success);

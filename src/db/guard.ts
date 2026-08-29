@@ -40,21 +40,3 @@ export async function safePut(
   }
 }
 
-export async function safeDelete(
-  db: IDBPDatabase<SdbDBSchema>,
-  store: StoreNames<SdbDBSchema>,
-  key: string,
-): Promise<void> {
-  try {
-    await db.delete(store, key);
-  } catch (err) {
-    if (isQuotaError(err)) {
-      throw new SdbError(
-        ERROR_CODES.SDB_DB_QUOTA,
-        'storage',
-        '本地存储空间不足，操作失败。请导出数据备份或清理浏览器数据后重试。',
-      );
-    }
-    throw err;
-  }
-}

@@ -1,6 +1,11 @@
 /**
  * 轻量事件总线（mitt 风格，architecture.md §10.3）
- * 约定事件：reading:changed / bill:recalculated / theme:changed / sync:done / online:changed
+ * 约定事件：reading:changed / bill:recalculated / budget:changed /
+ *          premise:changed / price:changed / theme:changed / sync:done / online:changed
+ *
+ * ⚠️ 凡是会写 IndexedDB 并需要跨设备传播的变更，都必须 emit 对应事件。
+ * useAutoSync 只监听本表事件来触发防抖推送，useSyncStatus 只据此统计「待同步」条数；
+ * 漏发事件 = 该变更永远滞留本地，直到下一次别的改动顺带把它带上。
  */
 export type EventHandler<T = unknown> = (payload?: T) => void;
 
@@ -8,6 +13,8 @@ export const EVENTS = {
   READING_CHANGED: 'reading:changed',
   BILL_RECALCULATED: 'bill:recalculated',
   BUDGET_CHANGED: 'budget:changed',
+  PREMISE_CHANGED: 'premise:changed',
+  PRICE_CHANGED: 'price:changed',
   THEME_CHANGED: 'theme:changed',
   SYNC_DONE: 'sync:done',
   ONLINE_CHANGED: 'online:changed',

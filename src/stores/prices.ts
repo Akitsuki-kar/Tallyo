@@ -6,6 +6,7 @@ import { ref } from 'vue';
 import type { PriceConfig, PriceRecord, Premise } from '@/types';
 import * as priceRepo from '@/db/repositories/priceRepo';
 import { defaultPriceConfig } from '@/utils/pricing';
+import { eventBus, EVENTS } from '@/utils/eventBus';
 import { logger } from '@/utils/logger';
 
 export const usePricesStore = defineStore('prices', () => {
@@ -58,6 +59,9 @@ export const usePricesStore = defineStore('prices', () => {
     };
     await priceRepo.putPrice(record);
     records.value[premiseId] = config;
+    // 通知自动同步推送：单价本身不产生账单事件，若不发此事件，
+    // 「改了单价但当月账单金额恰好不变」时改动会一直滞留本地。
+    eventBus.emit(EVENTS.PRICE_CHANGED, { premiseId });
   }
 
   /** 房源删除时清理单价（软删） */
@@ -72,7 +76,34 @@ export const usePricesStore = defineStore('prices', () => {
     };
     await priceRepo.putPrice(tombstone);
     delete records.value[p.id];
+    eventBus.emit(EVENTS.PRICE_CHANGED, { premiseId: p.id });
   }
 
-  return { records, load, getPrice, ensureDefault, setPrice, removePriceForPremise };
+  /**
+   * 撤销删除房源时恢复其单价配置（removePriceForPremise 的逆操作）。
+   * 仅在存在墓碑记录时生效；恢复后 syncVersion +1 保证这次恢复能推到对端。
+   */
+  async function restorePriceForPremise(premiseId: string): Promise<void> {
+    const existing = await priceRepo.getPriceRecord(premiseId);
+    if (!existing || !existing.isDeleted) return;
+    const restored: PriceRecord = {
+      ...existing,
+      isDeleted: false,
+      updatedAt: new Date().toISOString(),
+      syncVersion: existing.syncVersion + 1,
+    };
+    await priceRepo.putPrice(restored);
+    records.value[premiseId] = restored.config;
+    eventBus.emit(EVENTS.PRICE_CHANGED, { premiseId });
+  }
+
+  return {
+    records,
+    load,
+    getPrice,
+    ensureDefault,
+    setPrice,
+    removePriceForPremise,
+    restorePriceForPremise,
+  };
 });

@@ -138,23 +138,12 @@ export function parseRemoteSnapshot(text: string): SyncSnapshot {
   return snap;
 }
 
-/** 远端胜出实体是否有内容需要写回本地 */
-function hasPulled(pulled: Partial<SyncSnapshot>): boolean {
-  return (
-    (pulled.readings?.length ?? 0) > 0 ||
-    (pulled.bills?.length ?? 0) > 0 ||
-    (pulled.premises?.length ?? 0) > 0 ||
-    (pulled.prices?.length ?? 0) > 0 ||
-    (pulled.budgets?.length ?? 0) > 0 ||
-    !!pulled.settings
-  );
-}
-
 /**
  * 把远端胜出的实体逐个写回对应 repo，并刷新相关 store。
  * @param options.syncTheme  false 时远端主题不覆盖本地（保留本地主题字段）
  * @param options.syncSettings false 时远端设置全部不应用
- * 若有 settings 被远端覆盖，调用 settings store 的 update() 与 applyTheme() 使主题即时生效。
+ * 若有 settings 被远端覆盖，走 settings store 的 applyRemoteSettings()（冻结远端 updatedAt
+ * 以避免跨设备乒乓）并即时生效主题。
  */
 export async function applySnapshot(
   pulled: Partial<SyncSnapshot>,
@@ -171,20 +160,9 @@ export async function applySnapshot(
   await Promise.all(tasks);
 
   if (pulled.settings && syncSettings) {
-    const s = useSettingsStore();
-    if (syncTheme) {
-      // 完全应用远端设置（含主题）
-      await s.update(pulled.settings);
-      s.applyTheme();
-    } else {
-      // 仅应用非主题字段，保留本地主题
-      const localTheme = s.theme;
-      await s.update({
-        ...pulled.settings,
-        theme: localTheme, // 覆盖回本地主题
-      });
-      // 不调 applyTheme() — 本地主题未变
-    }
+    // 走 applyRemoteSettings（冻结远端 updatedAt）而非 update()：
+    // update() 会把 updatedAt 刷成当前时间，在 syncTheme=false 时造成跨设备设置无限乒乓。
+    await useSettingsStore().applyRemoteSettings(pulled.settings, syncTheme);
   }
 
   // 刷新相关 store，保证内存与库一致
@@ -195,6 +173,12 @@ export async function applySnapshot(
   const bills = useBillsStore();
   await Promise.all([readings.load(), premises.load(), prices.load(), budgets.load()]);
   await bills.load();
+
+  // 重建读数链：合并是按实体逐个 LWW 写入的，插入的读数会让既有记录的
+  // previousReading 失效（账单不受影响，但列表「用量」列读的正是这个字段）。
+  if ((pulled.readings?.length ?? 0) > 0) {
+    await readings.relinkChains();
+  }
 
   // 仅当「账单的计算输入」（读数 / 单价 / 预算）确实被远端更新时才重算。
   // 远端拉来的 bills 本身已是算好的结果，直接写库即可，无需再算一遍。

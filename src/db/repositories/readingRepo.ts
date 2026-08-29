@@ -6,7 +6,7 @@
  * - getDirtyReadingsSince：用 syncVersion 索引 + IDBKeyRange.upperBound 排除已扫描记录
  */
 import { getDB } from '../database';
-import { safePut, safeDelete } from '../guard';
+import { safePut } from '../guard';
 import type { Reading, ReadingType } from '@/types';
 import { toPlain } from '@/utils/clone';
 import { logger } from '@/utils/logger';
@@ -75,12 +75,9 @@ export async function getLatestReading(premiseId: string, type: ReadingType): Pr
  */
 export async function getDirtyReadingsSince(since: number): Promise<Reading[]> {
   const db = await getDB();
-  // upperBound(since, true) → syncVersion > since（exclusive）
-  const range = IDBKeyRange.upperBound(since, true);
+  // lowerBound(since, true) → syncVersion > since（exclusive）
+  // 注意：不可用 upperBound——那取到的是「syncVersion < since」的反向集合，
+  // 会让增量扫描恰好漏掉所有待同步的新变更。
+  const range = IDBKeyRange.lowerBound(since, true);
   return db.getAllFromIndex('readings', 'syncVersion', range);
-}
-
-export async function deleteReadingHard(id: string): Promise<void> {
-  const db = await getDB();
-  await safeDelete(db, 'readings', id);
 }

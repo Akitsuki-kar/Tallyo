@@ -47,3 +47,9 @@ src-tauri/icons/ios/
 .DS_Store
 .workbuddy/
 Thumbs.db
+
+# 构建备份目录（mv dist dist-bak-* 规避 safe-delete 时的临时产物，勿入库）
+dist-bak-*/
+
+# 项目级 cargo 本地镜像配置（本机代理环境的临时手段，不入库）
+src-tauri/.cargo/

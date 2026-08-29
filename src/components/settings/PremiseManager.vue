@@ -22,6 +22,8 @@ import type { Premise } from '@/types';
 const premisesStore = usePremisesStore();
 const readingsStore = useReadingsStore();
 const { list, currentPremiseId } = storeToRefs(premisesStore);
+// bare：true 时不渲染外卡片与标题，作为「房源」分区卡的子内容嵌入（见 Settings.vue 重排）
+const { bare = false } = defineProps<{ bare?: boolean }>();
 
 // ---- 读数条数（按房源统计，软删不计） ----
 function readingCount(premiseId: string): number {
@@ -86,7 +88,7 @@ async function onDelete(p: Premise): Promise<void> {
   try {
     await showConfirmDialog({
       title: '删除房源',
-      message: `确定删除「${p.name}」吗？删除后该房源的读数与账单不再显示，数据仍保留在本地，可通过导出备份。`,
+      message: `确定删除「${p.name}」吗？该房源的读数与账单仍保留在本地（可通过导出备份查看），仅不再显示；其单价与预算配置会一并清除。`,
       confirmButtonText: '删除',
       confirmButtonColor: 'var(--sdb-danger)',
     });
@@ -113,8 +115,8 @@ onMounted(async () => {
 
 <template>
   <!-- 房源管理分区（沿用设置页 van-cell-group inset 骨架） -->
-  <div class="sdb-card premise-manager">
-    <div class="premise-manager__head">
+  <div :class="['premise-manager', { 'sdb-card': !bare }]">
+    <div v-if="!bare" class="premise-manager__head">
       <span class="premise-manager__title">房源管理</span>
       <span class="premise-manager__count">{{ list.length }} 套</span>
     </div>

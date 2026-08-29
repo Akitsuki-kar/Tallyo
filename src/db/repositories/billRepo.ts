@@ -2,7 +2,7 @@
  * 账单 Repository（含软删与增量扫描接口）
  */
 import { getDB } from '../database';
-import { safePut, safeDelete } from '../guard';
+import { safePut } from '../guard';
 import type { Bill } from '@/types';
 import { toPlain } from '@/utils/clone';
 import { logger } from '@/utils/logger';
@@ -42,11 +42,8 @@ export async function getBillsByPremise(premiseId: string): Promise<Bill[]> {
  */
 export async function getDirtyBillsSince(since: number): Promise<Bill[]> {
   const db = await getDB();
-  const range = IDBKeyRange.upperBound(since, true); // exclusive → syncVersion > since
+  // lowerBound(since, true) → syncVersion > since（exclusive）
+  // 注意：不可用 upperBound——那取到的是「syncVersion < since」的反向集合。
+  const range = IDBKeyRange.lowerBound(since, true);
   return db.getAllFromIndex('bills', 'syncVersion', range);
-}
-
-export async function deleteBillHard(id: string): Promise<void> {
-  const db = await getDB();
-  await safeDelete(db, 'bills', id);
 }
