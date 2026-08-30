@@ -6,18 +6,18 @@
  * 1. 房源切换（PremiseSelector）
  * 2. 月度账单列表（BillCard 概览卡，最近在前）
  * 3. 点击账单 → 弹出详情（van-popup），内含模板选择器 + 渲染选定模板
- * 4. 导出 PDF（html2canvas + jsPDF）
+ * 4. 导出 PDF（html2canvas-pro + jsPDF）
  *
  * 数据 reactive 派生自 bills / premises / settings store。严格手作美学 token。
  */
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { showSuccessToast, showToast } from 'vant';
 import { usePremisesStore } from '@/stores/premises';
 import { useBillsStore } from '@/stores/bills';
 import { useSettingsStore } from '@/stores/settings';
 import { formatMonthLabel } from '@/utils/dayjs';
-import { exportElementToPdf } from '@/utils/pdf';
+import BillExportStage from '@/components/bills/BillExportStage.vue';
 import type { Bill, BillTemplateId } from '@/types';
 import PremiseSelector from '@/components/common/PremiseSelector.vue';
 import EmptyState from '@/components/common/EmptyState.vue';
@@ -46,8 +46,17 @@ const selectedBill = ref<Bill | null>(null);
 const selectedTemplate = ref<BillTemplateId>('receipt');
 const exporting = ref(false);
 
-/** 模板渲染区 ref（用于 PDF 捕获） */
-const templateRef = ref<HTMLElement | null>(null);
+/**
+ * PDF 导出舞台（离屏）。
+ *
+ * 不直接捕获弹层里的模板渲染区：那是按屏幕宽度布局的控件（小票仅 280px 宽），
+ * 放进 A4 后会变成「大白页中央贴一个小控件」，既不铺满也不适合存档。
+ * 改由 BillExportStage 在离屏处按基准宽度重排选中的模板小票，
+ * 导出时只捕获小票本体并按 A4 满宽放大铺满第一页。
+ */
+const exportStageRef = ref<InstanceType<typeof BillExportStage> | null>(null);
+/** 是否在离屏挂载导出舞台：仅在导出瞬间挂载，避免常驻渲染 4 个模板 */
+const exportStageOn = ref(false);
 
 /** 当前房源名 */
 const premiseName = computed(() => currentPremise.value?.name ?? '');
@@ -84,12 +93,19 @@ async function onTemplateChange(id: BillTemplateId): Promise<void> {
 
 // ---- 导出 PDF ----
 async function onExportPdf(): Promise<void> {
-  if (!templateRef.value || !selectedBill.value) return;
+  if (!selectedBill.value) return;
   exporting.value = true;
   try {
+    // 挂载离屏舞台 → 等它按 A4 比例排好版 → 捕获导出 → 卸载
+    exportStageOn.value = true;
+    await nextTick();
     const filename = `水电动账-${selectedBill.value.yearMonth}`;
-    await exportElementToPdf(templateRef.value, filename);
-    showSuccessToast('已导出 PDF');
+    try {
+      await exportStageRef.value?.exportPdf(filename);
+      showSuccessToast('已导出 PDF');
+    } finally {
+      exportStageOn.value = false;
+    }
   } catch (e) {
     // 展示具体原因（原生壳保存失败 / 捕获失败等），便于定位
     showToast('导出失败：' + (e instanceof Error ? e.message : String(e)));
@@ -165,8 +181,8 @@ watch(currentPremiseId, () => {
           />
         </div>
 
-        <!-- 模板渲染区（PDF 捕获目标） -->
-        <div ref="templateRef" class="bills__template-render">
+        <!-- 模板渲染区（屏上预览；PDF 导出走下方离屏舞台，不复用此节点） -->
+        <div class="bills__template-render">
           <component
             :is="templateComponents[selectedTemplate]"
             v-if="selectedBill"
@@ -186,6 +202,15 @@ watch(currentPremiseId, () => {
         </button>
       </div>
     </van-popup>
+
+    <!-- PDF 导出舞台：离屏渲染，仅在导出瞬间挂载 -->
+    <BillExportStage
+      v-if="exportStageOn && selectedBill"
+      ref="exportStageRef"
+      :bill="selectedBill"
+      :premise-name="premiseName"
+      :template-id="selectedTemplate"
+    />
   </div>
 </template>
 

@@ -26,6 +26,16 @@ function injectCsp(): Plugin {
   };
 }
 
+// 是否 Tauri 构建：Tauri 专有包需正常打包供原生壳运行期使用，Web 构建则 external。
+// html2canvas（jspdf 的 optionalDependencies，1.4.x 旧版）两种构建都 external：
+// 项目仅用 jspdf.addImage()（canvas→PDF，见 src/utils/pdf.ts），从不调用 jspdf.html()；
+// 该包为传递依赖（npm ci 后不保证存在）且不支持 OKLCH，打包只会产出无用 chunk。
+function buildExternals(): string[] {
+  const shared = ['html2canvas'];
+  if (isTauri) return shared;
+  return [...shared, '@tauri-apps/plugin-dialog', '@tauri-apps/plugin-fs', '@tauri-apps/plugin-http', '@tauri-apps/plugin-opener', 'tauri-plugin-keyring-api'];
+}
+
 // 水电动账（SDB）Vite 配置：Vue + PWA（离线优先）/ 可选 Tauri 原生壳
 export default defineConfig({
   // 将 Vite 缓存目录移出 node_modules
@@ -39,18 +49,10 @@ export default defineConfig({
     // Web/PWA 构建下，把 Tauri 专有模块标为 external：
     // 它们仅在原生壳运行期按需动态加载，且被 isTauriShell() 守卫，浏览器永不执行，
     // 故不应进入 web 包、也不应在构建期被解析（避免 failed to resolve import）。
-    // Tauri 构建（TAURI_BUILD=1）不 external，需正常打包这些插件供原生壳运行期使用。
-    rollupOptions: isTauri
-      ? {}
-      : {
-          external: [
-            '@tauri-apps/plugin-dialog',
-            '@tauri-apps/plugin-fs',
-            '@tauri-apps/plugin-http',
-            '@tauri-apps/plugin-opener',
-            'tauri-plugin-keyring-api',
-          ],
-        },
+    // Tauri 构建（TAURI_BUILD=1）不 external 这些插件，需正常打包供原生壳运行期使用。
+    rollupOptions: {
+      external: buildExternals(),
+    },
   },
   // 注入 import.meta.env.TAURI_BUILD，供 main.ts 守卫 registerSW 使用。
   define: {

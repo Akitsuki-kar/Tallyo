@@ -124,7 +124,7 @@ SDB/                                   # 项目根（已存在，不新建子目
    │  ├─ logger.ts                     # 日志                     [Phase 1]
    │  ├─ response.ts                   # 统一响应类型             [Phase 1]
    │  ├─ format.ts                     # 数值/货币格式化           [Phase 1]
-   │  └─ pdf.ts                        # PDF 导出（html2canvas+jspdf）[Phase 6]
+   │  └─ pdf.ts                        # PDF 导出（html2canvas-pro+jspdf）[Phase 6]
    └─ styles/
       ├─ variables.css                 # 暖色生活风 CSS 变量（色板 token）[Phase 1]
       ├─ theme.css                     # 深浅主题覆盖             [Phase 1/7]
@@ -499,7 +499,7 @@ T06 可与 T05 并行起步但需 T04 先落地；T09 依赖 T05/T08 已存在�
   }
 }
 ```
-> Phase 6 PDF 导出追加：`jspdf@^2.5.1`、`html2canvas@^1.4.1`（或改用浏览器原生打印，见待明确 5）。样式若引入预处理器可加 `sass@^1.72`。
+> Phase 6 PDF 导出追加：`jspdf@^2.5.1`、`html2canvas-pro@^2.4.0`（支持 OKLCH 的官方 fork；原版 html2canvas 1.4.x 解析不了 OKLCH token，且是 jspdf 的 optionalDependencies，构建时已 external，见 vite.config `buildExternals`）。
 
 ---
 
@@ -591,7 +591,7 @@ export interface Result<T> {
 - **D3 预算口径**：支持「按金额(元)」与「按用量(度/吨)」两种，用户可切换。`Budget = { premiseId; mode:'amount'|'usage'; electricityLimit; waterLimit; updatedAt; syncVersion; isDeleted }`，limit 含义随 mode 变化；80%/100% 预警按对应维度计算。
 - **D4 加密密钥**：采用设备本地随机密钥（首次运行 `crypto.getRandomValues` 生成 256-bit，存 localStorage，AES-256-GCM），不依赖用户口令。
 - **D5 同步远程布局**：单 `data.json` 全量快照（默认），`syncEngine` 抽象 `loadRemote/putRemote` 以便后续切换分文件。
-- **D6 PDF 导出**：Phase 6 采用 `html2canvas + jsPDF`（追加依赖）；保留浏览器原生打印作为备选。
+- **D6 PDF 导出**：Phase 6 采用 `html2canvas-pro + jsPDF`（追加依赖）。导出内容为「所选模板小票本体」按 A4 满宽等比放大（见 BillExportStage）；原版 html2canvas 不支持 OKLCH token，故采用官方 fork html2canvas-pro。保留浏览器原生打印作为备选。
 - **D7 LWW 同版本裁决**：`syncVersion` 相等时以 `updatedAt` 较新者胜（默认采纳）。
 - **D8 账单-预算关系**：`Bill.budgetStatus` 由 `budget` store 计算回写（采纳原设计）。
 
