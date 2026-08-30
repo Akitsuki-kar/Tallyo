@@ -5,6 +5,7 @@
  * 大量留白，仅展示核心数字。合计用手写体大数字居中展示，
  * 下方细线分列电费/水费。色调克制，仅暖色文字。
  */
+import { computed } from 'vue';
 import type { Bill } from '@/types';
 import { formatCurrency, formatNumber } from '@/utils/format';
 import { formatMonthLabel } from '@/utils/dayjs';
@@ -13,6 +14,9 @@ const props = defineProps<{
   bill: Bill;
   premiseName?: string;
 }>();
+
+/** 房租行：仅在房源勾选「计入账单」且金额大于 0 时出现 */
+const showRent = computed(() => props.bill.rentVisible === true && (props.bill.rent ?? 0) > 0);
 </script>
 
 <template>
@@ -43,6 +47,11 @@ const props = defineProps<{
         <span class="bill-minimal__detail-label">水费</span>
         <span class="bill-minimal__detail-value">{{ formatCurrency(bill.waterCost) }}</span>
         <span class="bill-minimal__detail-sub">{{ formatNumber(bill.waterUsage) }} 吨</span>
+      </div>
+      <div v-if="showRent" class="bill-minimal__detail-row">
+        <span class="bill-minimal__detail-label">房租</span>
+        <span class="bill-minimal__detail-value">{{ formatCurrency(bill.rent ?? 0) }}</span>
+        <span class="bill-minimal__detail-sub">月租</span>
       </div>
     </div>
   </div>

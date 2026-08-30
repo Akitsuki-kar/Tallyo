@@ -8,7 +8,7 @@
 import { findPreviousReading, relinkChain } from '@/utils/readingChain';
 import { resolveLWW, mergeEntities, mergeSnapshotDetailed } from '@/sync/merge';
 import { monthlyUsage, monthReadings } from '@/utils/billing';
-import { calcTieredCost, calcCost, defaultPriceConfig } from '@/utils/pricing';
+import { calcTieredCost, calcCost, defaultPriceConfig, applySettlement } from '@/utils/pricing';
 import { isQuotaError } from '@/db/guard';
 import { encryptKeyWithPassphrase, decryptKeyWithPassphrase } from '@/sync/crypto';
 import type { Reading, Bill, Premise, PriceRecord, Budget, Settings } from '@/types';
@@ -529,6 +529,25 @@ function near(actual: number, expected: number, message: string): void {
   near(calcCost('electricity', 300, tiered), 172.2, 'calcCost: 阶梯计价走 calcTieredCost');
   // 水阶梯默认 [≤180 @3.5, 及以上 @4.8]，用量 200 → 180×3.5 + 20×4.8 = 630 + 96 = 726
   near(calcCost('water', 200, tiered), 726, 'calcCost: 水阶梯独立生效');
+}
+
+// ─── applySettlement 测试（0.1.1 整额结算 + 不足进一）───
+{
+  // 全额：保留两位小数，与历史行为一致
+  assert(applySettlement(42.68, { mode: 'full', rounding: 'round' }) === 42.68, 'applySettlement: 全额保留两位 42.68');
+  assert(applySettlement(42.68, undefined) === 42.68, 'applySettlement: 缺省按全额');
+  // round 四舍五入
+  assert(applySettlement(28.6, { mode: 'integer', rounding: 'round' }) === 29, 'applySettlement: 四舍五入 28.6 → 29');
+  assert(applySettlement(28.4, { mode: 'integer', rounding: 'round' }) === 28, 'applySettlement: 四舍五入 28.4 → 28');
+  // floor 直接舍弃
+  assert(applySettlement(28.9, { mode: 'integer', rounding: 'floor' }) === 28, 'applySettlement: 直接舍弃 28.9 → 28');
+  // ceil 不足进一（有小数即进位）
+  assert(applySettlement(13.4, { mode: 'integer', rounding: 'ceil' }) === 14, 'applySettlement: 不足进一 13.4 → 14');
+  assert(applySettlement(13.1, { mode: 'integer', rounding: 'ceil' }) === 14, 'applySettlement: 不足进一 13.1 → 14');
+  assert(applySettlement(13.6, { mode: 'integer', rounding: 'ceil' }) === 14, 'applySettlement: 不足进一 13.6 → 14');
+  assert(applySettlement(14, { mode: 'integer', rounding: 'ceil' }) === 14, 'applySettlement: 不足进一 整数不变 14 → 14');
+  // 非正成本不触发取整、归零（ceil(0)=0）
+  assert(applySettlement(0, { mode: 'integer', rounding: 'ceil' }) === 0, 'applySettlement: 0 不进位');
 }
 
 // ─── 结果汇总 ───

@@ -28,7 +28,7 @@ import { usePWAInstall } from '@/composables/usePWAInstall';
 import { useSyncStatus } from '@/composables/useSyncStatus';
 import { exportData, importData } from '@/utils/dataExport';
 import { logger } from '@/utils/logger';
-import type { DefaultView, BillTemplateId, ThemeMode } from '@/types';
+import type { DefaultView, BillTemplateId, ThemeMode, QuickRecordPop } from '@/types';
 import PriceSettingPanel from '@/components/settings/PriceSettingPanel.vue';
 import PremiseManager from '@/components/settings/PremiseManager.vue';
 import DeviceKeyBackup from '@/components/settings/DeviceKeyBackup.vue';
@@ -45,7 +45,7 @@ const syncStore = useSyncStore();
 const { canInstall, prompt: promptInstall } = usePWAInstall();
 const { online } = useSyncStatus();
 
-const { theme, autoPopQuickRecord, defaultView, templateId } = storeToRefs(settingsStore);
+const { theme, quickRecordPop, autoMonthlyBill, defaultView, templateId } = storeToRefs(settingsStore);
 
 const pricePanelRef = ref<InstanceType<typeof PriceSettingPanel> | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
@@ -107,9 +107,29 @@ const templateDefs: { name: string; value: BillTemplateId }[] = [
   { name: '报表风', value: 'report' },
 ];
 
-// ---- 自动弹窗 ----
-function onAutoPopToggle(val: boolean): void {
-  settingsStore.update({ autoPopQuickRecord: val });
+// ---- 启动自动弹快速记录（0.1.1：关闭 / 每天首次 / 每次打开 三档） ----
+// 沿用「默认视图」的行 + action-sheet 形态而非分段控件：三个选项文案偏长，
+// 塞进一行分段控件在窄屏会截断，且这项是低频设置，多一次点击换来可读性是值得的。
+const showQuickPopPicker = ref(false);
+const quickPopActions: { name: string; value: QuickRecordPop; desc: string }[] = [
+  { name: '关闭', value: 'off', desc: '启动时不打扰' },
+  { name: '每天首次打开', value: 'daily', desc: '每天第一次进入时弹一次' },
+  { name: '每次打开', value: 'always', desc: '每次进入应用都弹' },
+];
+const quickPopLabel = computed(
+  () => quickPopActions.find((a) => a.value === quickRecordPop.value)?.name ?? '关闭',
+);
+const quickPopDesc = computed(
+  () => quickPopActions.find((a) => a.value === quickRecordPop.value)?.desc ?? '启动时不打扰',
+);
+function onQuickPopSelect(value: QuickRecordPop): void {
+  settingsStore.update({ quickRecordPop: value });
+  showQuickPopPicker.value = false;
+}
+
+// ---- 月初自动弹上月账单 ----
+function onMonthlyBillToggle(val: boolean): void {
+  settingsStore.update({ autoMonthlyBill: val });
 }
 
 // ---- 导出数据 ----
@@ -259,20 +279,29 @@ onMounted(async () => {
       <section class="sdb-sec">
         <span class="sdb-sec__tape"></span>
         <h3 class="sdb-sec__title">行为</h3>
-        <div class="sdb-row" role="button" tabindex="0" @click="onAutoPopToggle(!autoPopQuickRecord)">
+        <div class="sdb-row" role="button" tabindex="0" @click="showQuickPopPicker = true">
           <span class="sdb-row__ico">⚡</span>
           <span class="sdb-row__txt">
             <span class="sdb-row__t">启动自动弹快速记录</span>
-            <span class="sdb-row__d">每天首次打开自动记一笔</span>
+            <span class="sdb-row__d">{{ quickPopDesc }}</span>
+          </span>
+          <span class="sdb-row__v">{{ quickPopLabel }}</span>
+          <span class="sdb-row__chev">›</span>
+        </div>
+        <div class="sdb-row" role="button" tabindex="0" @click="onMonthlyBillToggle(!autoMonthlyBill)">
+          <span class="sdb-row__ico">🧾</span>
+          <span class="sdb-row__txt">
+            <span class="sdb-row__t">月初自动弹上月账单</span>
+            <span class="sdb-row__d">每月 1 号按默认模板打印上月结算单</span>
           </span>
           <button
             class="sdb-sw"
-            :class="{ 'is-on': autoPopQuickRecord }"
+            :class="{ 'is-on': autoMonthlyBill }"
             type="button"
             role="switch"
-            :aria-checked="autoPopQuickRecord"
-            aria-label="启动自动弹快速记录"
-            @click.stop="onAutoPopToggle(!autoPopQuickRecord)"
+            :aria-checked="autoMonthlyBill"
+            aria-label="月初自动弹上月账单"
+            @click.stop="onMonthlyBillToggle(!autoMonthlyBill)"
           ></button>
         </div>
         <div class="sdb-row" role="button" tabindex="0" @click="showViewPicker = true">
@@ -361,7 +390,7 @@ onMounted(async () => {
         <div class="sdb-row" role="button" tabindex="0">
           <span class="sdb-row__ico">🏷️</span>
           <span class="sdb-row__txt"><span class="sdb-row__t">版本</span></span>
-          <span class="sdb-row__v">0.1.0</span>
+          <span class="sdb-row__v">0.1.1</span>
         </div>
         <div class="sdb-chips">
           <button class="sdb-chip" type="button" @click="showAuthorSheet = true"><em>✍️</em>作者信息</button>
@@ -386,6 +415,20 @@ onMounted(async () => {
       v-model:show="showViewPicker"
       title="选择默认视图"
       :actions="viewActions.map((a) => ({ name: a.name, callback: () => onViewSelect(a) }))"
+      close-on-click-action
+    />
+
+    <!-- 启动自动弹快速记录：三档选择 -->
+    <van-action-sheet
+      v-model:show="showQuickPopPicker"
+      title="启动自动弹快速记录"
+      :actions="
+        quickPopActions.map((a) => ({
+          name: a.name,
+          subname: a.desc,
+          callback: () => onQuickPopSelect(a.value),
+        }))
+      "
       close-on-click-action
     />
 

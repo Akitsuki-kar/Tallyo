@@ -14,6 +14,18 @@ export type BudgetMode = 'amount' | 'usage';
 /** 单价模式：固定单价 或 阶梯计价 */
 export type PriceMode = 'flat' | 'tiered';
 
+/**
+ * 月底结算模式：
+ * - full    全额结算 —— 保留完整计算结果（两位小数），与 0.1.0 行为一致
+ * - integer 整额结算 —— 只收整数元，小数部分按 RoundingMode 处理
+ */
+export type SettlementMode = 'full' | 'integer';
+/** 整额结算的取整方式：四舍五入 / 直接舍弃小数 / 不足进一（有小数即进位取整） */
+export type RoundingMode = 'round' | 'floor' | 'ceil';
+
+/** 启动自动弹快速记录的时机：关闭 / 每天首次打开 / 每次打开 */
+export type QuickRecordPop = 'off' | 'daily' | 'always';
+
 // ---------- 同步元数据基类 ----------
 export interface EntityBase {
   id: string; // uuid v4
@@ -23,10 +35,41 @@ export interface EntityBase {
   isDeleted: boolean; // 软删（墓碑），用于同步传播删除
 }
 
+// ---------- 结算配置（0.1.1，按房源 × 按水电分别配置） ----------
+/**
+ * 单一能源类型的结算方式。
+ * rounding 仅在 mode = 'integer' 时生效，full 模式下留值不影响计算
+ * （保留字段是为了用户在 UI 上来回切换模式时不丢失已选的取整偏好）。
+ */
+export interface UtilitySettlement {
+  mode: SettlementMode;
+  rounding: RoundingMode;
+}
+
+/** 房源的结算配置：电、水各自独立（用户明确要求可分别设置） */
+export interface PremiseSettlement {
+  electricity: UtilitySettlement;
+  water: UtilitySettlement;
+}
+
 // ---------- 房源（D1） ----------
 export interface Premise extends EntityBase {
   name: string; // 房源名称，如「我的家」
   note?: string;
+  /**
+   * 月底结算模式（0.1.1 新增）。
+   * 可选：0.1.0 及更早的房源记录、以及旧版本同步下发的快照都没有此字段，
+   * 读取端一律用 defaultPremiseSettlement() 兜底为「全额结算」，保持行为不变。
+   */
+  settlement?: PremiseSettlement;
+  /** 每月房租（元，0.1.1 新增）。0 或缺省表示不收房租 */
+  rent?: number;
+  /**
+   * 房租是否计入账单。
+   * 用户决策：勾选后房租按填写金额「全额」直接加入总额（不参与水电的结算取整）；
+   * 未勾选则账单完全不体现房租。
+   */
+  rentVisible?: boolean;
 }
 
 // ---------- 阶梯档位（D2） ----------
@@ -67,10 +110,14 @@ export interface Bill extends EntityBase {
   premiseId: string;
   yearMonth: string; // 'YYYY-MM'
   electricityUsage: number;
-  electricityCost: number;
+  electricityCost: number; // 已按房源结算模式取整后的电费（落库即最终收费）
   waterUsage: number;
-  waterCost: number;
-  totalCost: number;
+  waterCost: number; // 已按房源结算模式取整后的水费
+  /** 房租快照（0.1.1 新增）：出账时房源上的 rent 值，0 表示无 */
+  rent?: number;
+  /** 房租是否计入 totalCost 并在模板中展示（0.1.1 新增） */
+  rentVisible?: boolean;
+  totalCost: number; // 电费 + 水费 (+ 房租，仅当 rentVisible)
   budgetStatus: BudgetStatus; // 由 budget store 计算回写（D8）
   generatedAt: string;
 }
@@ -86,7 +133,16 @@ export interface Budget extends EntityBase {
 // ---------- 应用设置（全局；不含 unitPrice，D2 已移出） ----------
 export interface Settings {
   theme: ThemeMode;
-  autoPopQuickRecord: boolean; // 启动是否自动弹快速记录
+  /**
+   * @deprecated 0.1.1 起改用 quickRecordPop（支持「每天首次 / 每次打开」两档）。
+   * 仍保留字段：① 读取本机旧数据时迁移；② 旧版本设备同步下发的快照里只有这个字段。
+   * 迁移规则见 stores/settings.ts 的 normalizeQuickRecordPop()。
+   */
+  autoPopQuickRecord?: boolean;
+  /** 启动自动弹快速记录的时机（0.1.1 新增） */
+  quickRecordPop: QuickRecordPop;
+  /** 每月 1 号自动弹出上月结算账单（含打印特效，0.1.1 新增） */
+  autoMonthlyBill: boolean;
   defaultView: DefaultView;
   templateId: BillTemplateId; // 默认账单模板
   updatedAt: string;

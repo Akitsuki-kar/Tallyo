@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>pdf export pipeline test</title>
+<link rel="stylesheet" href="/fonts/lxgw-wenkai/index.css" />
+<style>
+  :root {
+    --t-accent: oklch(0.55 0.12 40);
+    --t-surface: oklch(0.975 0.012 72);
+    --t-ink: oklch(0.42 0.06 30);
+    --t-line: oklch(0.7 0.1 30);
+  }
+</style>
+</head>
+<body>
+  <!-- 离屏「小票」：模拟模板根元素（oklch 背景 + 纸纹 + LXGW 字体） -->
+  <div
+    id="ticket"
+    style="position:fixed;top:0;left:-10000px;width:420px;height:594px;padding:24px;background:var(--t-surface);background-image:url('/textures/paper-noise.png');color:var(--t-ink);font-family:'LXGW WenKai Lite',system-ui;"
+  >
+    <h1 style="color:var(--t-accent);margin:0 0 12px;">水电账单 · 2026-08</h1>
+    <p style="margin:0 0 16px;">本月合计 <strong style="font-family:'LXGW WenKai Lite';">¥312.68</strong></p>
+    <div style="background:oklch(0.92 0.05 60);border:1px solid var(--t-line);padding:8px;border-radius:6px;">
+      电费 ¥211.20 · 276.0 度 ｜ 水费 ¥101.48 · 43.6 吨
+    </div>
+    <div style="margin-top:16px;background:oklch(0.45 0.1 25);color:oklch(0.99 0 0);padding:8px;border-radius:6px;">
+      谢谢使用 · 请妥善保存
+    </div>
+  </div>
+  <pre id="result">pending…</pre>
+  <script type="module">
+    const logEl = document.getElementById('result');
+    window.__log = (msg) => {
+      logEl.textContent = logEl.textContent === 'pending…' ? msg : logEl.textContent + '\n' + msg;
+      console.log('[exp]', msg);
+    };
+    window.addEventListener('error', (e) => window.__log('GLOBAL_ERROR ' + e.message));
+    window.addEventListener('unhandledrejection', (e) => window.__log('PROMISE_REJECT ' + (e.reason && e.reason.message ? e.reason.message : String(e.reason))));
+
+    try {
+      await document.fonts.ready;
+      const html2canvas = (await import('html2canvas-pro')).default;
+      const { jsPDF } = await import('jspdf');
+
+      const el = document.getElementById('ticket');
+      // —— 复刻 pdf.ts 的 captureElement（TARGET_DPI=200, PAGE_W_MM=210）——
+      const TARGET_PX_W = (210 / 25.4) * 200; // ≈1654
+      const rect = el.getBoundingClientRect();
+      const cssW = Math.round(rect.width) || el.offsetWidth || 794;
+      const cssH = Math.round(rect.height) || el.offsetHeight || Math.round(cssW * 1.4143);
+      const scale = Math.min(6, Math.max(2, Math.ceil(TARGET_PX_W / cssW)));
+      window.__log('capture: cssW=' + cssW + ' cssH=' + cssH + ' scale=' + scale);
+
+      const canvas = await html2canvas(el, {
+        scale,
+        width: cssW,
+        height: cssH,
+        windowWidth: document.documentElement.clientWidth,
+        windowHeight: document.documentElement.clientHeight,
+        useCORS: true,
+        foreignObjectRendering: false,
+        backgroundColor: '#fff9f2',
+        logging: false,
+      });
+
+      // 校验 canvas 非黑：统计全图非透明像素比例
+      const ctx = canvas.getContext('2d');
+      const probe = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+      let opaque = 0;
+      for (let i = 3; i < probe.length; i += 4) if (probe[i] > 0) opaque++;
+      const opaqueRatio = ((opaque / (canvas.width * canvas.height)) * 100).toFixed(1);
+
+      // —— 复刻 exportPageToPdf 的拼页逻辑（不含落盘）——
+      const PAGE_W_MM = 210, PAGE_H_MM = 297;
+      const imgW = PAGE_W_MM;
+      const imgH = (canvas.height / canvas.width) * PAGE_W_MM;
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const pages = Math.max(1, Math.ceil(imgH / PAGE_H_MM));
+      for (let p = 0; p < pages; p++) {
+        if (p > 0) pdf.addPage();
+        pdf.addImage(imgData, 'JPEG', 0, -p * PAGE_H_MM, imgW, imgH);
+      }
+      const blob = pdf.output('blob');
+      window.__log(`PDF_OK pages=${pages} bytes=${blob.size} imgH=${imgH.toFixed(1)}mm opaqueRatio=${opaqueRatio}% canvas=${canvas.width}x${canvas.height}`);
+      window.__log('ALL_DONE');
+    } catch (e) {
+      window.__log('FAIL ' + (e && e.message ? e.message : String(e)));
+    }
+  </script>
+</body>
+</html>

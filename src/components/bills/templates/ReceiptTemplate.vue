@@ -5,6 +5,7 @@
  * 窄纸条样式，虚线分割，等宽数字，居中布局。
  * 模拟热敏小票的视觉感，但使用暖色纸纹而非纯白。
  */
+import { computed } from 'vue';
 import type { Bill } from '@/types';
 import { formatCurrency, formatNumber } from '@/utils/format';
 import { formatMonthLabel } from '@/utils/dayjs';
@@ -13,6 +14,9 @@ const props = defineProps<{
   bill: Bill;
   premiseName?: string;
 }>();
+
+/** 房租行：仅在房源勾选「计入账单」且金额大于 0 时出现（0 元房租不占版面） */
+const showRent = computed(() => props.bill.rentVisible === true && (props.bill.rent ?? 0) > 0);
 </script>
 
 <template>
@@ -38,6 +42,11 @@ const props = defineProps<{
         <span>用水</span>
         <span class="bill-receipt__num">{{ formatNumber(bill.waterUsage) }} 吨</span>
         <span class="bill-receipt__price">{{ formatCurrency(bill.waterCost) }}</span>
+      </div>
+      <div v-if="showRent" class="bill-receipt__row">
+        <span>房租</span>
+        <span class="bill-receipt__num">月租</span>
+        <span class="bill-receipt__price">{{ formatCurrency(bill.rent ?? 0) }}</span>
       </div>
     </div>
 

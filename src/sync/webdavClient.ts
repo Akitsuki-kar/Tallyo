@@ -163,6 +163,8 @@ export function createWebdavClient(
             : `服务端错误 ${res.status}，请参考 docs/webdav-setup.md`,
         );
       }
+      // 成功路径：fetch 已完成，及时清除超时定时器，避免对已完成请求再调用 abort（无害但冗余）。
+      clearTimeout(timer);
       return res;
     } catch (err) {
       clearTimeout(timer);

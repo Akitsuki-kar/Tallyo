@@ -7,8 +7,9 @@ import type { Bill, Reading } from '@/types';
 import * as billRepo from '@/db/repositories/billRepo';
 import * as readingRepo from '@/db/repositories/readingRepo';
 import * as priceRepo from '@/db/repositories/priceRepo';
+import * as premiseRepo from '@/db/repositories/premiseRepo';
 import { useBudgetsStore } from './budgets';
-import { calcCost } from '@/utils/pricing';
+import { calcCost, applySettlement } from '@/utils/pricing';
 import { round2 } from '@/utils/format';
 import { monthKeyFromDate } from '@/utils/dayjs';
 import { monthlyUsage } from '@/utils/billing';
@@ -70,6 +71,9 @@ export const useBillsStore = defineStore('bills', () => {
       a.electricityCost === b.electricityCost &&
       a.waterUsage === b.waterUsage &&
       a.waterCost === b.waterCost &&
+      // 房租参与判等：改了房租/显示开关必须产生新版本，否则同步端看不到变化
+      (a.rent ?? 0) === (b.rent ?? 0) &&
+      (a.rentVisible ?? false) === (b.rentVisible ?? false) &&
       a.totalCost === b.totalCost &&
       a.budgetStatus === b.budgetStatus &&
       a.isDeleted === b.isDeleted
@@ -86,14 +90,29 @@ export const useBillsStore = defineStore('bills', () => {
    * 月度用量改用 monthlyUsage：取该月净用量（月末 − 月初基准），
    * 月内录多条读数也不会少计（修复此前只取末条单差导致少计的问题）。
    * 详见 src/utils/billing.ts。
+   *
+   * 0.1.1 起在「用量 × 单价」之后追加两步房源级折算：
+   *   ① 结算模式（applySettlement）：电、水各自独立取整，落库值即最终收费；
+   *   ② 房租：勾选「计入账单」时按填写金额全额加进总额（不参与水电取整）。
    */
   async function computeBill(premiseId: string, yearMonth: string, allReadings: Reading[]): Promise<Bill> {
     const eleUsage = monthlyUsage(allReadings, premiseId, 'electricity', yearMonth);
     const waterUsage = monthlyUsage(allReadings, premiseId, 'water', yearMonth);
     const price = await priceRepo.getPrice(premiseId);
-    const eleCost = calcCost('electricity', eleUsage, price);
-    const waterCost = calcCost('water', waterUsage, price);
-    const total = round2(eleCost + waterCost);
+    // 读 repo 而非 premises store：computeBill 也会在同步 applySnapshot 阶段被调用，
+    // 那时内存 store 可能还没刷新，直接读库拿到的才是刚合并落地的最新配置。
+    const premise = await premiseRepo.getPremise(premiseId);
+    const settlement = premise?.settlement;
+    const eleCost = applySettlement(
+      calcCost('electricity', eleUsage, price),
+      settlement?.electricity,
+    );
+    const waterCost = applySettlement(calcCost('water', waterUsage, price), settlement?.water);
+    // 房租：未勾选显示 → 完全不体现（rent 记 0），勾选 → 全额计入
+    const rentVisible = premise?.rentVisible === true;
+    const rentAmount = Number(premise?.rent);
+    const rent = rentVisible && Number.isFinite(rentAmount) ? round2(Math.max(0, rentAmount)) : 0;
+    const total = round2(eleCost + waterCost + rent);
 
     const billId = `${premiseId}:${yearMonth}`;
     const now = new Date().toISOString();
@@ -107,6 +126,8 @@ export const useBillsStore = defineStore('bills', () => {
       electricityCost: round2(eleCost),
       waterUsage: round2(waterUsage),
       waterCost: round2(waterCost),
+      rent,
+      rentVisible,
       totalCost: total,
       budgetStatus: 'ok',
       generatedAt: now,
@@ -129,6 +150,36 @@ export const useBillsStore = defineStore('bills', () => {
     bills.value[billId] = bill;
     eventBus.emit(EVENTS.BILL_RECALCULATED, bill);
     return bill;
+  }
+
+  /**
+   * 批量重算某房源的多个月份。
+   * 相比循环调用 recompute()，全量读数只从 IndexedDB 取一次 ——
+   * 补录历史读数会级联重算数十个月，逐月全表扫描的开销是不可接受的。
+   */
+  async function recomputeMonths(premiseId: string, months: string[]): Promise<void> {
+    if (months.length === 0) return;
+    const all = await readingRepo.getAllReadings();
+    for (const m of months) {
+      await computeBill(premiseId, m, all);
+    }
+  }
+
+  /**
+   * 重算某房源的**全部**历史月份账单。
+   * 用于「房源级配置变更」——结算模式、房租、单价 —— 这类改动影响该房源所有月份的金额。
+   * 只遍历确实有读数的月份，不会凭空造出空账单。
+   */
+  async function recomputePremise(premiseId: string): Promise<void> {
+    const all = await readingRepo.getAllReadings();
+    const months = new Set<string>();
+    for (const r of all) {
+      if (r.isDeleted || r.premiseId !== premiseId) continue;
+      months.add(monthKeyFromDate(r.date));
+    }
+    for (const m of [...months].sort()) {
+      await computeBill(premiseId, m, all);
+    }
   }
 
   async function recomputeAll(): Promise<void> {
@@ -155,6 +206,8 @@ export const useBillsStore = defineStore('bills', () => {
     totalOf,
     load,
     recompute,
+    recomputeMonths,
+    recomputePremise,
     recomputeAll,
   };
 });

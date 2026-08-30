@@ -10,7 +10,29 @@ import { logger } from '@/utils/logger';
 import { eventBus, EVENTS } from '@/utils/eventBus';
 import { usePricesStore } from './prices';
 import { useBudgetsStore } from './budgets';
+import { useBillsStore } from './bills';
+import { defaultPremiseSettlement } from '@/utils/pricing';
 import { useUndo } from '@/composables/useUndo';
+
+/**
+ * 计费口径指纹：只包含**影响账单金额**的房源字段（结算模式 / 计入账单的房租）。
+ * 改名、改备注不进指纹，避免无谓地重算全部历史账单。
+ * 缺省值与 applySettlement 的兜底保持一致（全额结算 / 无房租），
+ * 这样 0.1.0 老房源在首次补齐字段时不会被误判为「金额有变」。
+ */
+/** 新增房源时可一并指定的计费配置（结算模式 / 房租），省掉「先建后改」的第二次写库与第二次同步事件 */
+export type PremiseBillingInit = Pick<Premise, 'settlement' | 'rent' | 'rentVisible'>;
+
+function billingFingerprint(p: Premise): string {
+  const s = p.settlement;
+  return JSON.stringify([
+    s?.electricity.mode ?? 'full',
+    s?.electricity.rounding ?? 'round',
+    s?.water.mode ?? 'full',
+    s?.water.rounding ?? 'round',
+    p.rentVisible === true ? Number(p.rent) || 0 : 0,
+  ]);
+}
 
 export const usePremisesStore = defineStore('premises', () => {
   const items = ref<Premise[]>([]);
@@ -36,7 +58,12 @@ export const usePremisesStore = defineStore('premises', () => {
     }
   }
 
-  async function addPremise(name: string, note?: string, id?: string): Promise<Premise> {
+  async function addPremise(
+    name: string,
+    note?: string,
+    id?: string,
+    billing?: Partial<PremiseBillingInit>,
+  ): Promise<Premise> {
     const now = new Date().toISOString();
     const premise: Premise = {
       // 显式传 id 时（如种子「我的家」用固定 HOME_PREMISE_ID）沿用；否则随机生成。
@@ -44,6 +71,11 @@ export const usePremisesStore = defineStore('premises', () => {
       id: id ?? genId(),
       name,
       note,
+      // 0.1.1：新房源显式落一份计费配置，让设置面板打开即有确定值，不必依赖读取端兜底。
+      // 调用方（房源表单）可直接带入用户填的结算模式与房租；未传则用「全额结算 / 无房租」默认。
+      settlement: billing?.settlement ?? defaultPremiseSettlement(),
+      rent: billing?.rent ?? 0,
+      rentVisible: billing?.rentVisible ?? false,
       createdAt: now,
       updatedAt: now,
       syncVersion: 1,
@@ -68,6 +100,8 @@ export const usePremisesStore = defineStore('premises', () => {
   async function updatePremise(id: string, patch: Partial<Omit<Premise, 'id'>>): Promise<void> {
     const existing = items.value.find((p) => p.id === id);
     if (!existing) return;
+    // 改动前的计费口径快照（Object.assign 之后 existing 就被覆盖了，必须先取）
+    const beforeBilling = billingFingerprint(existing);
     const updated: Premise = {
       ...existing,
       ...patch,
@@ -77,6 +111,19 @@ export const usePremisesStore = defineStore('premises', () => {
     await premiseRepo.putPremise(updated);
     Object.assign(existing, updated);
     eventBus.emit(EVENTS.PREMISE_CHANGED, { id });
+
+    // 结算模式或房租变了 → 该房源**所有**历史月份的金额都要跟着变。
+    // 放在 store 而不是 UI 里判断：任何入口（设置面板、导入、脚本）改配置都不会漏算。
+    // recomputePremise 幂等，金额没变的月份不写库、不发事件。
+    if (billingFingerprint(updated) !== beforeBilling) {
+      try {
+        await useBillsStore().recomputePremise(id);
+      } catch (err) {
+        logger.error('store:premises', '房源计费配置变更后重算账单失败', {
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
   }
 
   async function removePremise(id: string): Promise<void> {

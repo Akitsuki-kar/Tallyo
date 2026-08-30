@@ -25,3 +25,18 @@ export function formatMonthLabel(key: string): string {
 export function monthKeyFromDate(dateKeyStr: string): string {
   return dayjs(dateKeyStr, 'YYYY-MM-DD').format('YYYY-MM');
 }
+
+/** 相邻月份键：nextMonthKey('2026-12') → '2027-01' */
+export function nextMonthKey(key: string): string {
+  return dayjs(key, 'YYYY-MM').add(1, 'month').format('YYYY-MM');
+}
+
+/** 相邻月份键（往前）：prevMonthKey('2026-01') → '2025-12' */
+export function prevMonthKey(key: string): string {
+  return dayjs(key, 'YYYY-MM').subtract(1, 'month').format('YYYY-MM');
+}
+
+/** 某月的天数（'2026-02' → 28） */
+export function daysInMonth(key: string): number {
+  return dayjs(key, 'YYYY-MM').daysInMonth();
+}

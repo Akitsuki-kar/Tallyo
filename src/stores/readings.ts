@@ -87,7 +87,21 @@ export const useReadingsStore = defineStore('readings', () => {
 
   /**
    * 重算某 (房源, 类型) 的读数链：把 relinkChain 返回的变更记录批量写回 IndexedDB，
-   * 并同步内存；随后重算受影响月份集合（extraMonths + 所有变更记录所在月份）。
+   * 并同步内存；随后重算受影响月份的账单。
+   *
+   * ⚠️ 受影响月份 ≠ 「被改动记录所在的月份」。
+   * 月度用量 monthlyUsage = 该月末读数 − 该月首条之前的那条读数，
+   * 也就是说**每个月的计费基准是上个月的月末读数**。
+   * 补录一条历史读数，改变的不只是它自己所在的月份，还有它之后所有月份的基准链
+   * —— 这正是「补录之前的电表/水表记录后旧账单不重算」的根因（0.1.0 只重算了改动月本身）。
+   *
+   * 修复口径：取所有改动月份中最早的一个，把该房源**不早于它**且确实有读数的月份全部重算。
+   * · 为什么不只算「下一个月」：月份可能有空档（3 月补录，4 月没读数，5 月的基准其实来自 3 月），
+   *   单步级联会漏掉跨空档的月份。
+   * · 为什么按「有读数的月份」筛：避免给空月凭空造出一张全 0 的账单。
+   * · extraMonths 无条件保留：删除某月最后一条读数后该月已无读数，但它的旧账单必须被清零。
+   * · 重算是幂等的（isSameBillValue 短路），金额没变的月份不会产生写入与同步事件，
+   *   所以「多算几个月」在正确性与同步开销上都是安全的。
    */
   async function relinkAndRecompute(
     premiseId: string,
@@ -110,10 +124,18 @@ export const useReadingsStore = defineStore('readings', () => {
     for (const rec of changed) {
       months.add(monthKeyFromDate(rec.date));
     }
-    const bills = useBillsStore();
-    for (const m of months) {
-      await bills.recompute(premiseId, m);
+    if (months.size === 0) return; // 链未变且无显式月份：无账单需要重算
+
+    // YYYY-MM 定长字符串，字典序即时间序，可直接比较
+    const earliest = [...months].sort()[0];
+    for (const r of items.value) {
+      if (r.isDeleted || r.premiseId !== premiseId) continue;
+      const m = monthKeyFromDate(r.date);
+      if (m >= earliest) months.add(m);
     }
+
+    // 按月份升序重算：先算早月再算晚月，日志/事件顺序符合直觉
+    await useBillsStore().recomputeMonths(premiseId, [...months].sort());
   }
 
   /**

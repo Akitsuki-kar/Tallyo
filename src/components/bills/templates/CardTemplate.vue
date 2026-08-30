@@ -15,6 +15,9 @@ const props = defineProps<{
   premiseName?: string;
 }>();
 
+/** 房租行：仅在房源勾选「计入账单」且金额大于 0 时出现 */
+const showRent = computed(() => props.bill.rentVisible === true && (props.bill.rent ?? 0) > 0);
+
 const budgetText = computed(() => {
   switch (props.bill.budgetStatus) {
     case 'exceeded': return '超预算';
@@ -69,6 +72,16 @@ const budgetText = computed(() => {
           <div class="bill-card-tpl__item-sub">{{ formatNumber(bill.waterUsage) }} 吨</div>
         </div>
         <div class="bill-card-tpl__item-cost">{{ formatCurrency(bill.waterCost) }}</div>
+      </div>
+      <div v-if="showRent" class="bill-card-tpl__item">
+        <div class="bill-card-tpl__item-icon is-rent">
+          <van-icon name="home-o" />
+        </div>
+        <div class="bill-card-tpl__item-body">
+          <div class="bill-card-tpl__item-label">房租</div>
+          <div class="bill-card-tpl__item-sub">月租</div>
+        </div>
+        <div class="bill-card-tpl__item-cost">{{ formatCurrency(bill.rent ?? 0) }}</div>
       </div>
     </div>
 
@@ -188,6 +201,10 @@ const budgetText = computed(() => {
 .bill-card-tpl__item-icon.is-water {
   background: oklch(from var(--sdb-primary) l c h / 0.15);
   color: var(--sdb-primary);
+}
+.bill-card-tpl__item-icon.is-rent {
+  background: oklch(from var(--sdb-success) l c h / 0.15);
+  color: var(--sdb-success);
 }
 .bill-card-tpl__item-body {
   flex: 1;

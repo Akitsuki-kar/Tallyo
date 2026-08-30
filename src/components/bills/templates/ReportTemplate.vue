@@ -5,6 +5,7 @@
  * 结构化表格布局，标题栏 + 项目/用量/金额表头 + 汇总行。
  * 适合正式场景或打印归档。使用暖色 token 保持一致美学。
  */
+import { computed } from 'vue';
 import type { Bill } from '@/types';
 import { formatCurrency, formatNumber } from '@/utils/format';
 import { formatMonthLabel } from '@/utils/dayjs';
@@ -13,6 +14,9 @@ const props = defineProps<{
   bill: Bill;
   premiseName?: string;
 }>();
+
+/** 房租行：仅在房源勾选「计入账单」且金额大于 0 时出现 */
+const showRent = computed(() => props.bill.rentVisible === true && (props.bill.rent ?? 0) > 0);
 </script>
 
 <template>
@@ -51,6 +55,14 @@ const props = defineProps<{
           </td>
           <td class="bill-report__num">{{ formatNumber(bill.waterUsage) }} 吨</td>
           <td class="bill-report__num bill-report__num--cost">{{ formatCurrency(bill.waterCost) }}</td>
+        </tr>
+        <tr v-if="showRent">
+          <td>
+            <span class="bill-report__item-icon">🏠</span>
+            房租
+          </td>
+          <td class="bill-report__num">月租</td>
+          <td class="bill-report__num bill-report__num--cost">{{ formatCurrency(bill.rent ?? 0) }}</td>
         </tr>
       </tbody>
       <tfoot>

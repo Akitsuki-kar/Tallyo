@@ -8,15 +8,20 @@
  * - 三图：趋势折线（电费/水费/合计）、月度对比柱状（电费 vs 水费）、费用构成饼图（中心显示合计）。
  * - 数据全部从 bills / premises store 派生（reactive），无需额外请求。
  */
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useBillsStore } from '@/stores/bills';
 import { usePremisesStore } from '@/stores/premises';
+import { useReadingsStore } from '@/stores/readings';
 import { formatCurrency } from '@/utils/format';
+import { dailyStats } from '@/utils/billing';
+import { dayjs, prevMonthKey, nextMonthKey } from '@/utils/dayjs';
+import { logger } from '@/utils/logger';
 import EmptyState from '@/components/common/EmptyState.vue';
 import MetricCard from '@/components/stats/MetricCard.vue';
 import TrendChart from '@/components/stats/TrendChart.vue';
 import CompareChart from '@/components/stats/CompareChart.vue';
 import CostPieChart from '@/components/stats/CostPieChart.vue';
+import DailyChart from '@/components/stats/DailyChart.vue';
 
 interface SheetAction {
   name: string;
@@ -114,62 +119,130 @@ const pieTitle = computed(() =>
 );
 
 const money = (n: number): string => formatCurrency(n);
+
+// ---- 视图切换：月度（原有三图）/ 每日（0.1.1 新增） ----
+const viewMode = ref<'monthly' | 'daily'>('monthly');
+
+// ---- 每日视图：当前房源 + 可前后翻月（用户需求「当月每天」+ 历史回看） ----
+const readingsStore = useReadingsStore();
+const dailyMonth = ref(dayjs().format('YYYY-MM'));
+const dailyPoints = computed(() =>
+  dailyStats(readingsStore.items, premisesStore.currentPremiseId, dailyMonth.value),
+);
+const dailyHasData = computed(() =>
+  dailyPoints.value.some((p) => p.hasReading || p.electricity > 0 || p.water > 0),
+);
+function stepMonth(delta: number): void {
+  dailyMonth.value = delta < 0 ? prevMonthKey(dailyMonth.value) : nextMonthKey(dailyMonth.value);
+}
+onMounted(async () => {
+  // 每日视图依赖读数；bootstrap 通常已加载，这里兜底
+  if (!readingsStore.items.length) {
+    try {
+      await readingsStore.load();
+    } catch (err) {
+      logger.error('stats', '加载读数失败', { message: err instanceof Error ? err.message : String(err) });
+    }
+  }
+});
 </script>
 
 <template>
   <div class="sdb-stats">
     <h2 class="sdb-page-title">可视化统计</h2>
 
-    <!-- 选择器：房源维度 + 时间跨度 -->
-    <div class="sdb-stats__filters">
-      <button class="sdb-chip" type="button" @click="scopeSheet = true">
-        <span class="sdb-chip__key">房源</span>
-        <span class="sdb-chip__val">{{ scopeLabel }}</span>
-        <span class="sdb-chip__caret">▾</span>
+    <!-- 视图切换：月度 / 每日 -->
+    <div class="sdb-seg">
+      <button
+        class="sdb-seg__i"
+        :class="{ 'is-on': viewMode === 'monthly' }"
+        type="button"
+        @click="viewMode = 'monthly'"
+      >
+        月度
       </button>
-      <button class="sdb-chip" type="button" @click="spanSheet = true">
-        <span class="sdb-chip__key">区间</span>
-        <span class="sdb-chip__val">{{ spanLabel }}</span>
-        <span class="sdb-chip__caret">▾</span>
+      <button
+        class="sdb-seg__i"
+        :class="{ 'is-on': viewMode === 'daily' }"
+        type="button"
+        @click="viewMode = 'daily'"
+      >
+        每日
       </button>
     </div>
 
-    <EmptyState
-      v-if="!hasData"
-      text="暂无账单数据"
-      hint="先去记录读数，月底账单会自动生成"
-    />
+    <!-- 月度视图：房源 + 区间选择 + 三图 -->
+    <template v-if="viewMode === 'monthly'">
+      <!-- 选择器：房源维度 + 时间跨度 -->
+      <div class="sdb-stats__filters">
+        <button class="sdb-chip" type="button" @click="scopeSheet = true">
+          <span class="sdb-chip__key">房源</span>
+          <span class="sdb-chip__val">{{ scopeLabel }}</span>
+          <span class="sdb-chip__caret">▾</span>
+        </button>
+        <button class="sdb-chip" type="button" @click="spanSheet = true">
+          <span class="sdb-chip__key">区间</span>
+          <span class="sdb-chip__val">{{ spanLabel }}</span>
+          <span class="sdb-chip__caret">▾</span>
+        </button>
+      </div>
 
+      <EmptyState
+        v-if="!hasData"
+        text="暂无账单数据"
+        hint="先去记录读数，月底账单会自动生成"
+      />
+
+      <template v-else>
+        <!-- 指标卡 -->
+        <div class="sdb-metric-row">
+          <MetricCard label="本月电费" :value="lastAgg ? money(lastAgg.ele) : '—'" />
+          <MetricCard label="本月水费" :value="lastAgg ? money(lastAgg.water) : '—'" />
+          <MetricCard label="本月合计" :value="lastAgg ? money(lastAgg.total) : '—'" />
+          <MetricCard label="环比 (总)" :value="deltaText" :tone="deltaTone" delta-hint="环比上月" />
+        </div>
+
+        <!-- 趋势折线 -->
+        <section class="sdb-card">
+          <h3 class="sdb-card__title">费用趋势</h3>
+          <TrendChart :months="months" :electricity="eleArr" :water="waterArr" :total="totalArr" />
+        </section>
+
+        <!-- 月度对比 + 费用构成（PC 两列，手机堆叠） -->
+        <div class="sdb-stats-grid">
+          <section class="sdb-card">
+            <h3 class="sdb-card__title">月度对比</h3>
+            <CompareChart :months="months" :electricity="eleArr" :water="waterArr" />
+          </section>
+          <section class="sdb-card">
+            <h3 class="sdb-card__title">费用构成</h3>
+            <CostPieChart
+              :electricity="lastAgg?.ele ?? 0"
+              :water="lastAgg?.water ?? 0"
+              :title="pieTitle"
+            />
+          </section>
+        </div>
+      </template>
+    </template>
+
+    <!-- 每日视图：当前房源 + 翻月 + 日维度图表 -->
     <template v-else>
-      <!-- 指标卡 -->
-      <div class="sdb-metric-row">
-        <MetricCard label="本月电费" :value="lastAgg ? money(lastAgg.ele) : '—'" />
-        <MetricCard label="本月水费" :value="lastAgg ? money(lastAgg.water) : '—'" />
-        <MetricCard label="本月合计" :value="lastAgg ? money(lastAgg.total) : '—'" />
-        <MetricCard label="环比 (总)" :value="deltaText" :tone="deltaTone" delta-hint="环比上月" />
+      <div class="sdb-stats__daily-head">
+        <span class="sdb-stats__daily-name">{{ premisesStore.currentPremise?.name ?? '当前房源' }}</span>
+        <div class="sdb-stats__month-nav">
+          <button class="sdb-chip sdb-chip--sm" type="button" aria-label="上个月" @click="stepMonth(-1)">‹</button>
+          <span class="sdb-chip__val">{{ dailyMonth }}</span>
+          <button class="sdb-chip sdb-chip--sm" type="button" aria-label="下个月" @click="stepMonth(1)">›</button>
+        </div>
       </div>
 
-      <!-- 趋势折线 -->
-      <section class="sdb-card">
-        <h3 class="sdb-card__title">费用趋势</h3>
-        <TrendChart :months="months" :electricity="eleArr" :water="waterArr" :total="totalArr" />
-      </section>
-
-      <!-- 月度对比 + 费用构成（PC 两列，手机堆叠） -->
-      <div class="sdb-stats-grid">
-        <section class="sdb-card">
-          <h3 class="sdb-card__title">月度对比</h3>
-          <CompareChart :months="months" :electricity="eleArr" :water="waterArr" />
-        </section>
-        <section class="sdb-card">
-          <h3 class="sdb-card__title">费用构成</h3>
-          <CostPieChart
-            :electricity="lastAgg?.ele ?? 0"
-            :water="lastAgg?.water ?? 0"
-            :title="pieTitle"
-          />
-        </section>
-      </div>
+      <EmptyState
+        v-if="!dailyHasData"
+        text="本月暂无读数"
+        hint="先去记录读数，再回来看每日用量与涨幅"
+      />
+      <DailyChart v-else :points="dailyPoints" />
     </template>
 
     <!-- 选择器面板 -->
@@ -252,6 +325,62 @@ const money = (n: number): string => formatCurrency(n);
   display: grid;
   grid-template-columns: 1fr;
   gap: var(--sdb-gap);
+}
+/* 视图切换分段控件（月度 / 每日） */
+.sdb-seg {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--sdb-surface-2);
+  border-radius: var(--sdb-radius-pill);
+  width: fit-content;
+}
+.sdb-seg__i {
+  padding: 7px 22px;
+  border: none;
+  border-radius: var(--sdb-radius-pill);
+  cursor: pointer;
+  background: transparent;
+  color: var(--sdb-text-secondary);
+  font-family: inherit;
+  font-size: var(--sdb-text-sm);
+  font-weight: 600;
+  transition:
+    background var(--sdb-dur-fast) var(--sdb-ease-out),
+    color var(--sdb-dur-fast) var(--sdb-ease-out);
+}
+.sdb-seg__i.is-on {
+  background: var(--sdb-surface);
+  color: var(--sdb-text);
+  box-shadow: var(--sdb-shadow-sm);
+}
+/* 每日视图头部：房源名 + 翻月 */
+.sdb-stats__daily-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.sdb-stats__daily-name {
+  font-size: var(--sdb-text-base);
+  font-weight: 700;
+  color: var(--sdb-text);
+}
+.sdb-stats__month-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.sdb-chip--sm {
+  padding: 6px 12px;
+  font-size: 16px;
+  line-height: 1;
+}
+/* 尊重降低动效偏好 */
+@media (prefers-reduced-motion: reduce) {
+  .sdb-seg__i {
+    transition: none;
+  }
 }
 /* PC ≥768px：月度对比与费用构成并排 */
 @media (min-width: 768px) {

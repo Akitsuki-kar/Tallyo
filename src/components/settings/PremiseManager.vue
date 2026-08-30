@@ -3,13 +3,14 @@
  * 房源管理（设置页内嵌分区）
  *
  * 功能：
- * 1. 房源列表卡片：名称 / 备注 / 读数条数，点击切换当前房源
- * 2. 新增房源（底部弹层表单：名称 + 备注，写入默认单价）
+ * 1. 房源列表卡片：名称 / 备注 / 结算摘要 / 读数条数，点击切换当前房源
+ * 2. 新增房源（底部弹层表单：名称 + 备注 + 结算方式 + 房租，写入默认单价）
  * 3. 编辑房源（同表单，回填既有值）
  * 4. 删除房源（软删 tombstone，同步链路兼容；最后一个房源不可删）
  *
  * 数据层复用 premises store 既有 CRUD（addPremise / updatePremise / removePremise），
  * 读数条数从 readings store 按 premiseId 统计。
+ * 计费配置（结算模式 / 房租）改动后由 premises store 自行触发历史账单重算，本组件不介入。
  */
 import { computed, onMounted, ref } from 'vue';
 import { storeToRefs } from 'pinia';
@@ -17,7 +18,8 @@ import { showSuccessToast, showToast, showConfirmDialog } from 'vant';
 import { usePremisesStore } from '@/stores/premises';
 import { useReadingsStore } from '@/stores/readings';
 import { logger } from '@/utils/logger';
-import type { Premise } from '@/types';
+import { round2 } from '@/utils/format';
+import type { Premise, UtilitySettlement } from '@/types';
 
 const premisesStore = usePremisesStore();
 const readingsStore = useReadingsStore();
@@ -30,11 +32,56 @@ function readingCount(premiseId: string): number {
   return readingsStore.items.filter((r) => !r.isDeleted && r.premiseId === premiseId).length;
 }
 
+/**
+ * 结算方式的 UI 取值：把数据层的 {mode, rounding} 二元组压成单选一档。
+ * 理由——mode='full' 时 rounding 无意义，若在界面上拆成「模式开关 + 取整方式子选项」，
+ * 会出现一个永远灰着、却仍占位的子控件。三档单选与实际状态空间一一对应，少一次点击。
+ */
+type SettleKey = 'full' | 'round' | 'floor' | 'ceil';
+const settleDefs: { key: SettleKey; name: string; hint: string }[] = [
+  { key: 'full', name: '全额', hint: '按实际计算结果收，保留两位小数（42.68 → 42.68 元）' },
+  { key: 'round', name: '四舍五入', hint: '只收整数元，小数四舍五入（42.68 → 43 元）' },
+  { key: 'floor', name: '直接舍弃', hint: '只收整数元，小数直接抹掉（42.68 → 42 元）' },
+  { key: 'ceil', name: '不足进一', hint: '只收整数元，只要有小数就进位（13.4 → 14 元，13.1 → 14 元）' },
+];
+
+function toUtilitySettlement(key: SettleKey): UtilitySettlement {
+  if (key === 'full') return { mode: 'full', rounding: 'round' };
+  return { mode: 'integer', rounding: key };
+}
+function fromUtilitySettlement(s?: UtilitySettlement): SettleKey {
+  // 旧房源（0.1.0）没有 settlement 字段，按全额结算回填，与 applySettlement 的兜底一致
+  if (!s || s.mode !== 'integer') return 'full';
+  if (s.rounding === 'floor') return 'floor';
+  if (s.rounding === 'ceil') return 'ceil';
+  return 'round';
+}
+function settleHint(key: SettleKey): string {
+  return settleDefs.find((d) => d.key === key)?.hint ?? '';
+}
+
+/** 列表行上的结算摘要：只在非默认配置时显示，默认「全额 + 无房租」不占视觉噪音 */
+function billingSummary(p: Premise): string {
+  const parts: string[] = [];
+  const ele = fromUtilitySettlement(p.settlement?.electricity);
+  const water = fromUtilitySettlement(p.settlement?.water);
+  if (ele !== 'full' || water !== 'full') {
+    const label = (k: SettleKey) => settleDefs.find((d) => d.key === k)?.name ?? '全额';
+    parts.push(ele === water ? `整额·${label(ele)}` : `电${label(ele)}/水${label(water)}`);
+  }
+  if (p.rentVisible && (p.rent ?? 0) > 0) parts.push(`房租 ¥${p.rent}`);
+  return parts.join(' · ');
+}
+
 // ---- 表单弹层（新增 / 编辑共用） ----
 const showForm = ref(false);
 const editingId = ref<string | null>(null); // null = 新增
 const formName = ref('');
 const formNote = ref('');
+const formEleSettle = ref<SettleKey>('full');
+const formWaterSettle = ref<SettleKey>('full');
+const formRent = ref(''); // 文本承载，允许留空 = 0，避免 number 输入框的空值/NaN 歧义
+const formRentVisible = ref(false);
 const saving = ref(false);
 
 const formTitle = computed(() => (editingId.value ? '编辑房源' : '新增房源'));
@@ -43,6 +90,10 @@ function openAdd(): void {
   editingId.value = null;
   formName.value = '';
   formNote.value = '';
+  formEleSettle.value = 'full';
+  formWaterSettle.value = 'full';
+  formRent.value = '';
+  formRentVisible.value = false;
   showForm.value = true;
 }
 
@@ -50,6 +101,11 @@ function openEdit(p: Premise): void {
   editingId.value = p.id;
   formName.value = p.name;
   formNote.value = p.note ?? '';
+  formEleSettle.value = fromUtilitySettlement(p.settlement?.electricity);
+  formWaterSettle.value = fromUtilitySettlement(p.settlement?.water);
+  // 0 与未设置在界面上都表现为空——房租 0 等价于「不收房租」，不必强行显示一个 0
+  formRent.value = (p.rent ?? 0) > 0 ? String(p.rent) : '';
+  formRentVisible.value = p.rentVisible === true;
   showForm.value = true;
 }
 
@@ -59,13 +115,31 @@ async function onSave(): Promise<void> {
     showToast('请填写房源名称');
     return;
   }
+  const rentRaw = formRent.value.trim();
+  const rentNum = rentRaw === '' ? 0 : Number(rentRaw);
+  if (!Number.isFinite(rentNum) || rentNum < 0) {
+    showToast('房租请填 0 或正数');
+    return;
+  }
+  const billing = {
+    settlement: {
+      electricity: toUtilitySettlement(formEleSettle.value),
+      water: toUtilitySettlement(formWaterSettle.value),
+    },
+    rent: round2(rentNum),
+    rentVisible: formRentVisible.value,
+  };
   saving.value = true;
   try {
     if (editingId.value) {
-      await premisesStore.updatePremise(editingId.value, { name, note: formNote.value.trim() || undefined });
+      await premisesStore.updatePremise(editingId.value, {
+        name,
+        note: formNote.value.trim() || undefined,
+        ...billing,
+      });
       showSuccessToast('房源已更新');
     } else {
-      await premisesStore.addPremise(name, formNote.value.trim() || undefined);
+      await premisesStore.addPremise(name, formNote.value.trim() || undefined, undefined, billing);
       showSuccessToast('房源已添加');
     }
     showForm.value = false;
@@ -141,6 +215,8 @@ onMounted(async () => {
             <span>{{ readingCount(p.id) }} 条读数</span>
             <span v-if="p.note" class="premise-manager__note">{{ p.note }}</span>
           </div>
+          <!-- 结算摘要：仅非默认配置时出现，让「这套房不是全额结算」一眼可见 -->
+          <div v-if="billingSummary(p)" class="premise-manager__billing">{{ billingSummary(p) }}</div>
         </div>
         <div class="premise-manager__actions" @click.stop>
           <button
@@ -205,7 +281,77 @@ onMounted(async () => {
             />
           </div>
         </div>
-        <p class="premise-form__hint">新房源会自动使用默认水电单价，可在「水电单价」中单独调整。</p>
+        <!-- 月底结算方式：电、水各自独立（同一套房也常见「电抹零、水照算」） -->
+        <div class="premise-form__field">
+          <label class="premise-form__label">电费结算方式</label>
+          <div class="premise-form__seg" role="group" aria-label="电费结算方式">
+            <button
+              v-for="d in settleDefs"
+              :key="d.key"
+              type="button"
+              class="premise-form__seg-i"
+              :class="{ 'is-on': formEleSettle === d.key }"
+              :aria-pressed="formEleSettle === d.key"
+              @click="formEleSettle = d.key"
+            >
+              {{ d.name }}
+            </button>
+          </div>
+          <p class="premise-form__hint">{{ settleHint(formEleSettle) }}</p>
+        </div>
+        <div class="premise-form__field">
+          <label class="premise-form__label">水费结算方式</label>
+          <div class="premise-form__seg" role="group" aria-label="水费结算方式">
+            <button
+              v-for="d in settleDefs"
+              :key="d.key"
+              type="button"
+              class="premise-form__seg-i"
+              :class="{ 'is-on': formWaterSettle === d.key }"
+              :aria-pressed="formWaterSettle === d.key"
+              @click="formWaterSettle = d.key"
+            >
+              {{ d.name }}
+            </button>
+          </div>
+          <p class="premise-form__hint">{{ settleHint(formWaterSettle) }}</p>
+        </div>
+
+        <!-- 月租：与房源绑定，可留空/填 0；是否计入账单由下方开关决定 -->
+        <div class="premise-form__field">
+          <label class="premise-form__label" for="premise-rent">每月房租（可留空）</label>
+          <div class="premise-form__control">
+            <span class="premise-form__prefix">¥</span>
+            <input
+              id="premise-rent"
+              v-model="formRent"
+              type="text"
+              inputmode="decimal"
+              maxlength="10"
+              placeholder="0"
+              class="premise-form__input"
+            />
+          </div>
+          <div class="premise-form__switch-row">
+            <span class="premise-form__switch-txt">
+              <span class="premise-form__switch-t">在账单中显示房租</span>
+              <span class="premise-form__switch-d">开启后房租按填写金额全额计入账单总额</span>
+            </span>
+            <button
+              class="premise-form__sw"
+              :class="{ 'is-on': formRentVisible }"
+              type="button"
+              role="switch"
+              :aria-checked="formRentVisible"
+              aria-label="在账单中显示房租"
+              @click="formRentVisible = !formRentVisible"
+            ></button>
+          </div>
+        </div>
+
+        <p class="premise-form__hint">
+          新房源会自动使用默认水电单价，可在「水电单价」中单独调整。修改结算方式或房租后，该房源的历史账单会自动重算。
+        </p>
       </div>
 
       <div class="premise-form__footer">
@@ -301,6 +447,15 @@ onMounted(async () => {
   color: var(--sdb-text-secondary);
 }
 .premise-manager__note {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 结算摘要：弱化为次级提示，不与房源名争夺注意力 */
+.premise-manager__billing {
+  margin-top: 3px;
+  font-size: var(--sdb-text-xs);
+  color: var(--sdb-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -405,6 +560,103 @@ onMounted(async () => {
 }
 .premise-form__input::placeholder {
   color: var(--sdb-text-tertiary);
+}
+/* 金额前缀（¥）：与输入基线对齐，不参与点击 */
+.premise-form__prefix {
+  align-self: center;
+  margin-right: 6px;
+  font-size: var(--sdb-text-base);
+  color: var(--sdb-text-secondary);
+  user-select: none;
+}
+
+/* ---- 结算方式三段控件（与设置页 .sdb-seg 同款观感） ---- */
+.premise-form__seg {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--sdb-surface-2);
+  border-radius: var(--sdb-radius-pill);
+}
+.premise-form__seg-i {
+  flex: 1;
+  padding: 8px 4px;
+  border: none;
+  border-radius: var(--sdb-radius-pill);
+  cursor: pointer;
+  background: transparent;
+  color: var(--sdb-text-secondary);
+  font-family: inherit;
+  font-size: var(--sdb-text-sm);
+  transition:
+    background var(--sdb-dur-fast) var(--sdb-ease-out),
+    color var(--sdb-dur-fast) var(--sdb-ease-out);
+}
+.premise-form__seg-i.is-on {
+  background: var(--sdb-surface);
+  color: var(--sdb-text);
+  font-weight: 600;
+  box-shadow: var(--sdb-shadow-sm);
+}
+
+/* ---- 房租显示开关 ---- */
+.premise-form__switch-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+}
+.premise-form__switch-txt {
+  flex: 1;
+  min-width: 0;
+}
+.premise-form__switch-t {
+  display: block;
+  font-size: var(--sdb-text-sm);
+  color: var(--sdb-text);
+}
+.premise-form__switch-d {
+  display: block;
+  margin-top: 1px;
+  font-size: var(--sdb-text-xs);
+  color: var(--sdb-text-tertiary);
+}
+.premise-form__sw {
+  flex: none;
+  width: 46px;
+  height: 28px;
+  border: none;
+  border-radius: var(--sdb-radius-pill);
+  background: var(--sdb-border);
+  cursor: pointer;
+  position: relative;
+  transition: background var(--sdb-dur) var(--sdb-ease-out);
+}
+.premise-form__sw::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--sdb-surface);
+  box-shadow: 0 1px 3px oklch(45% 0.1 45 / 0.3);
+  transition: transform var(--sdb-dur) var(--sdb-ease-out);
+}
+.premise-form__sw.is-on {
+  background: var(--sdb-primary);
+}
+.premise-form__sw.is-on::after {
+  transform: translateX(18px);
+}
+/* 尊重降低动效偏好：开关与分段控件立即到位，不做过渡 */
+@media (prefers-reduced-motion: reduce) {
+  .premise-form__sw,
+  .premise-form__sw::after,
+  .premise-form__seg-i {
+    transition: none;
+  }
 }
 .premise-form__hint {
   margin: 0;

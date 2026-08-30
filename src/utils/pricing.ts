@@ -1,7 +1,13 @@
 /**
  * 单价计费纯函数（与 UI 解耦，architecture.md §3 / D2）
  */
-import type { PriceConfig, Tier, ReadingType } from '@/types';
+import type {
+  PriceConfig,
+  Tier,
+  ReadingType,
+  UtilitySettlement,
+  PremiseSettlement,
+} from '@/types';
 import { round2 } from './format';
 
 /**
@@ -58,6 +64,38 @@ export function calcCost(type: ReadingType, usage: number, price: PriceConfig): 
   }
   const tiers = type === 'electricity' ? price.tiers.electricity : price.tiers.water;
   return calcTieredCost(usage, tiers);
+}
+
+/**
+ * 应用月底结算模式：把「完整计算结果」折算成房东实际收取的金额（纯函数）。
+ *
+ * - full（全额结算）：保留两位小数，与 0.1.0 行为完全一致
+ * - integer（整额结算）：只收整数元
+ *     · round 四舍五入：28.6 → 29，28.4 → 28
+ *     · floor 直接舍弃：28.9 → 28
+ *     · ceil  不足进一：有小数即进位，13.4 → 14，13.1 → 14，13.6 → 14
+ *
+ * 缺省（settlement 为 undefined，即旧房源记录）按 full 处理，保证历史账单重算后金额不变。
+ * 注意 floor 下不足 1 元会归零（0.4 → 0），这是「直接舍弃小数」的题中之义；ceil 则恒向上取整。
+ */
+export function applySettlement(cost: number, settlement?: UtilitySettlement): number {
+  if (!Number.isFinite(cost) || cost <= 0) return 0;
+  if (!settlement || settlement.mode !== 'integer') return round2(cost);
+  // 三种取整：floor 直接舍弃小数、ceil 不足进一（有小数即进位）、round 四舍五入
+  if (settlement.rounding === 'floor') return Math.floor(cost);
+  if (settlement.rounding === 'ceil') return Math.ceil(cost);
+  return Math.round(cost);
+}
+
+/**
+ * 默认结算配置：电、水均为全额结算（与 0.1.0 行为一致）。
+ * rounding 预置 'round'，让用户切到整额结算时有个合理默认值。
+ */
+export function defaultPremiseSettlement(): PremiseSettlement {
+  return {
+    electricity: { mode: 'full', rounding: 'round' },
+    water: { mode: 'full', rounding: 'round' },
+  };
 }
 
 /**

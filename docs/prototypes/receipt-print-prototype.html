@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SDB · 月初账单打印特效原型</title>
+<style>
+  :root{
+    --paper:#faf6ee;
+    --ink:#2c2722;
+    --terracotta:#ef7a2e;
+    --honey:#e8b04b;
+    --surface:#fffdf8;
+    --muted:#8a8073;
+    --line:#e7ddcd;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;margin:0;}
+  body{
+    font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+    background:
+      radial-gradient(120% 80% at 50% -10%, #fff6ea 0%, #f3e9d8 60%, #ece0cc 100%);
+    color:var(--ink);
+    overflow:hidden;
+  }
+  .stage{position:fixed;inset:0;}
+
+  /* ---------- 顶部说明条 ---------- */
+  .hint{
+    position:fixed;top:0;left:0;right:0;z-index:30;
+    display:flex;align-items:center;gap:10px;justify-content:center;
+    padding:10px 14px;font-size:13px;color:var(--muted);
+    background:linear-gradient(180deg, rgba(255,255,255,.7), rgba(255,255,255,0));
+  }
+  .hint b{color:var(--terracotta);}
+
+  /* ---------- 打印机 ---------- */
+  .printer{
+    position:fixed;left:50%;bottom:0;transform:translateX(-50%);
+    width:360px;height:150px;z-index:20;
+    background:linear-gradient(180deg,#fffdf8,#f1e7d6);
+    border:1px solid var(--line);
+    border-bottom:none;
+    border-radius:18px 18px 0 0;
+    box-shadow:0 -10px 30px rgba(0,0,0,.10);
+    transition:opacity .45s ease;
+  }
+  /* 撕下后隐藏打印机（小票已脱离） */
+  .printer.is-hidden{opacity:0;pointer-events:none;}
+  .printer__brand{
+    position:absolute;left:18px;bottom:18px;font-size:12px;letter-spacing:2px;
+    color:var(--muted);font-weight:700;
+  }
+  .printer__led{
+    position:absolute;right:20px;bottom:20px;width:9px;height:9px;border-radius:50%;
+    background:var(--terracotta);box-shadow:0 0 8px var(--terracotta);
+    animation:blink 1.4s infinite;
+  }
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
+  /* 出纸口（打印机顶部的一道暗槽） */
+  .printer__slot{
+    position:absolute;left:50%;top:-3px;transform:translateX(-50%);
+    width:300px;height:8px;border-radius:6px;
+    background:linear-gradient(180deg,#3a332b,#1f1b16);
+    box-shadow:inset 0 2px 3px rgba(0,0,0,.5);
+  }
+
+  /* ---------- 小票 ---------- */
+  .receipt{
+    position:fixed;left:50%;
+    /* 底部对齐到打印机出纸口高度（约屏底+150px 打印机高 - 槽位置） */
+    bottom:147px;
+    width:300px;
+    transform:translateX(-50%) translateY(110%);
+    transform-origin:bottom center;
+    background:var(--paper);
+    color:var(--ink);
+    padding:18px 18px 22px;
+    z-index:15;
+    box-shadow:0 6px 18px rgba(0,0,0,.12);
+    will-change:transform;
+    transition:transform 1.9s cubic-bezier(.22,.61,.36,1), box-shadow .4s ease;
+    font-size:13px;line-height:1.5;
+  }
+  .receipt.is-fed{transform:translateX(-50%) translateY(0);}
+  .receipt.is-centered{
+    box-shadow:0 24px 60px rgba(0,0,0,.32);
+    transition:transform 1.1s cubic-bezier(.22,.61,.36,1), box-shadow .5s ease;
+  }
+  /* 锯齿撕边（撕下后由 JS 写入 clip-path） */
+  .receipt.is-torn{ /* clip-path 由 JS 动态设置 */ }
+
+  .rc-head{text-align:center;margin-bottom:10px;}
+  .rc-head .t1{font-size:15px;font-weight:800;letter-spacing:1px;}
+  .rc-head .t2{font-size:12px;color:var(--muted);margin-top:2px;}
+  .rc-line{display:flex;justify-content:space-between;padding:3px 0;}
+  .rc-line .k{color:#5b5247;}
+  .rc-line .v{font-variant-numeric:tabular-nums;font-weight:600;}
+  .rc-dash{border-top:1px dashed var(--line);margin:10px 0;}
+  .rc-total{display:flex;justify-content:space-between;font-size:16px;font-weight:800;color:var(--terracotta);}
+  .rc-foot{text-align:center;color:var(--muted);font-size:11px;margin-top:12px;letter-spacing:1px;}
+
+  /* ---------- 控制条 ---------- */
+  .controls{
+    position:fixed;left:50%;bottom:168px;transform:translateX(-50%);
+    z-index:25;display:flex;gap:10px;opacity:0;pointer-events:none;
+    transition:opacity .4s ease, bottom .45s ease;
+  }
+  .controls.show{opacity:1;pointer-events:auto;}
+  /* 打印完成后单据移到正中，控制条下移到屏底，避免遮挡单据 */
+  .controls.lowered{bottom:20px;}
+  .btn{
+    border:none;cursor:pointer;font-size:14px;font-weight:700;
+    padding:10px 18px;border-radius:999px;
+    box-shadow:0 4px 12px rgba(0,0,0,.14);
+  }
+  .btn--primary{background:var(--terracotta);color:#fff;}
+  .btn--ghost{background:#fff;color:var(--ink);border:1px solid var(--line);}
+  .btn:active{transform:translateY(1px);}
+
+  /* 漂浮提示（撕下动画进行中） */
+  .toast{
+    position:fixed;top:48px;left:50%;transform:translateX(-50%) translateY(-8px);
+    background:var(--ink);color:#fff;font-size:12px;padding:7px 14px;border-radius:999px;
+    opacity:0;transition:opacity .3s, transform .3s;z-index:40;pointer-events:none;
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+</style>
+</head>
+<body>
+  <div class="hint">功能 5 原型 · 每月 1 号自动弹出上月账单 — <b>打印机吐票 → 点「打印 PDF」：底部锯齿撕边撕下、打印机隐藏、小票移到正中</b></div>
+
+  <div class="stage">
+    <!-- 小票 -->
+    <div class="receipt" id="receipt">
+      <div class="rc-head">
+        <div class="t1">水电动账 · 月度结算</div>
+        <div class="t2">我的家 · 2026-07</div>
+      </div>
+      <div class="rc-line"><span class="k">电表读数(末)</span><span class="v">1,284 度</span></div>
+      <div class="rc-line"><span class="k">用电量</span><span class="v">186 度</span></div>
+      <div class="rc-line"><span class="k">电费（整额·四舍五入）</span><span class="v">¥104</span></div>
+      <div class="rc-dash"></div>
+      <div class="rc-line"><span class="k">水表读数(末)</span><span class="v">342 吨</span></div>
+      <div class="rc-line"><span class="k">用水量</span><span class="v">11 吨</span></div>
+      <div class="rc-line"><span class="k">水费（全额）</span><span class="v">¥38.50</span></div>
+      <div class="rc-dash"></div>
+      <div class="rc-line"><span class="k">房租（全额·账单展示）</span><span class="v">¥1,800</span></div>
+      <div class="rc-dash"></div>
+      <div class="rc-total"><span>本月合计</span><span>¥1,942.50</span></div>
+      <div class="rc-foot">— 谢谢使用 水电动账 —</div>
+    </div>
+
+    <!-- 打印机 -->
+    <div class="printer">
+      <div class="printer__slot"></div>
+      <div class="printer__brand">SDB PRINT</div>
+      <div class="printer__led"></div>
+    </div>
+
+    <!-- 控制条 -->
+    <div class="controls" id="controls">
+      <button class="btn btn--primary" id="printBtn">打印 PDF</button>
+      <button class="btn btn--ghost" id="closeBtn">关闭</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast">已生成 PDF（原型占位）</div>
+
+  <!-- 重新演示 -->
+  <button class="btn btn--ghost" id="replayBtn"
+    style="position:fixed;right:14px;top:44px;z-index:40;font-size:12px;padding:7px 12px;">重播动画</button>
+
+<script>
+  const receipt = document.getElementById('receipt');
+  const printer = document.querySelector('.printer');
+  const controls = document.getElementById('controls');
+  const printBtn = document.getElementById('printBtn');
+  const closeBtn = document.getElementById('closeBtn');
+  const replayBtn = document.getElementById('replayBtn');
+  const toast = document.getElementById('toast');
+
+  let fed = false;
+
+  // 锯齿撕边 clip-path（底部 zigzag —— 撕下处贴近打印机；顶部平直）
+  // 用像素级细齿（与上一版顶部方案一致的自然感），并加确定性微扰避免死板机械感
+  function tornClip(teeth, ampPx){
+    const pts = ['0% 0%', '100% 0%'];           // 顶部平直
+    for(let i=0;i<=teeth;i++){
+      const x = (1 - i/teeth) * 100;            // 100% → 0%
+      const wobble = Math.sin(i * 1.7) * (ampPx * 0.22); // ±22% 起伏，更像撕纸
+      const depth = Math.max(2.5, ampPx + wobble);
+      const y = (i % 2 === 0) ? '100%' : `calc(100% - ${depth.toFixed(1)}px)`;
+      pts.push(`${x.toFixed(2)}% ${y}`);
+    }
+    return `polygon(${pts.join(', ')})`;
+  }
+
+  function feed(){
+    receipt.classList.remove('is-centered','is-torn');
+    receipt.style.clipPath = '';
+    receipt.classList.remove('is-fed');
+    controls.classList.remove('show');
+    controls.classList.remove('lowered');
+    printer.classList.remove('is-hidden');
+    printBtn.style.display = ''; // 重播时恢复「打印 PDF」按钮
+    fed = false;
+    // 强制回流后加 class 触发过渡
+    void receipt.offsetWidth;
+    receipt.classList.add('is-fed');
+    fed = true;
+    // 吐票完成后浮现控制条
+    setTimeout(()=>controls.classList.add('show'), 2000);
+  }
+
+  function tearAndCenter(){
+    if(!fed) return;
+    // 1) 底部生成锯齿撕边（小票贴打印机的一端），并隐藏打印机
+    receipt.classList.add('is-torn');
+    receipt.style.clipPath = tornClip(22, 9);
+    printer.classList.add('is-hidden');
+    printBtn.style.display = 'none'; // 仅隐藏「打印 PDF」，保留「关闭」防止卡页
+    controls.classList.add('lowered'); // 控制条下移到屏底，不遮挡居中的单据
+
+    // 2) 计算从「已吐出」位置平移到屏幕正中
+    const rect = receipt.getBoundingClientRect();
+    const cx = window.innerWidth/2;
+    const cy = window.innerHeight/2;
+    const dx = cx - (rect.left + rect.width/2);
+    const dy = cy - (rect.top + rect.height/2);
+    // 在现有 translateX(-50%) 基础上叠加位移与放大
+    receipt.style.transform =
+      `translateX(-50%) translate(${dx}px, ${dy}px) scale(1.05)`;
+    receipt.classList.add('is-centered');
+
+    // 3) 模拟生成 PDF
+    setTimeout(()=>{
+      toast.classList.add('show');
+      setTimeout(()=>toast.classList.remove('show'), 1600);
+    }, 700);
+  }
+
+  function closeAll(){
+    receipt.classList.remove('is-centered','is-torn','is-fed');
+    receipt.style.clipPath = '';
+    receipt.style.transform = '';
+    printer.classList.remove('is-hidden');
+    printBtn.style.display = '';
+    controls.classList.remove('show');
+    controls.classList.remove('lowered');
+    fed = false;
+  }
+
+  printBtn.addEventListener('click', tearAndCenter);
+  closeBtn.addEventListener('click', closeAll);
+  replayBtn.addEventListener('click', feed);
+
+  // 首屏自动演示一次（模拟「1 号启动」）
+  window.addEventListener('load', ()=>setTimeout(feed, 400));
+</script>
+</body>
+</html>

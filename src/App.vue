@@ -15,19 +15,24 @@ import { useTheme } from '@/composables/useTheme';
 import { useAutoSync } from '@/composables/useAutoSync';
 import { isOnboarded } from '@/composables/useOnboarding';
 import { useSettingsStore } from '@/stores/settings';
+import { usePremisesStore } from '@/stores/premises';
+import { useBillsStore } from '@/stores/bills';
 import { eventBus, EVENTS } from '@/utils/eventBus';
 import { logger } from '@/utils/logger';
-import { dateKey } from '@/utils/dayjs';
-import type { ThemeMode } from '@/types';
+import { dateKey, dayjs, monthKey, prevMonthKey } from '@/utils/dayjs';
+import type { Bill, ThemeMode } from '@/types';
 import { useSyncStatus } from '@/composables/useSyncStatus';
 import { useUndo } from '@/composables/useUndo';
 import { useStoragePersistence } from '@/composables/useStoragePersistence';
 import QuickRecordPopup from '@/components/readings/QuickRecordPopup.vue';
+import MonthlyBillModal from '@/components/bills/MonthlyBillModal.vue';
 
 const router = useRouter();
 const { canInstall, prompt } = usePWAInstall();
 const { toggle } = useTheme();
 const settings = useSettingsStore();
+const premises = usePremisesStore();
+const bills = useBillsStore();
 // 体验⑪：在线状态 + 待同步改动计数（横幅展示）
 const { online, pendingCount } = useSyncStatus();
 // 体验⑫：撤销条（删除操作后出现的 5 秒撤销）
@@ -89,7 +94,7 @@ const tourSteps: TourStep[] = [
   },
 ];
 
-// 全局快速记录弹窗引用；自动弹防重复：按「日期」持久化（每天最多弹一次）
+// 全局快速记录弹窗引用；'daily' 档的防重复标记按「日期」持久化（每天最多弹一次）
 const QUICK_POP_KEY = 'sdb:lastQuickPopDate';
 const quickRef = ref<InstanceType<typeof QuickRecordPopup> | null>(null);
 
@@ -106,6 +111,60 @@ function setLastQuickPopDate(value: string): void {
   } catch {
     /* 隐私模式等场景忽略写入失败 */
   }
+}
+
+// ---- 月初账单弹层（0.1.1 功能 5）----
+// 防重复标记存「已弹过的月份」而不是日期：1 号内多次启动只弹第一次，
+// 且下个月 1 号自然失配、无需清理过期标记。
+const MONTHLY_POP_KEY = 'sdb:lastMonthlyBillPopMonth';
+const showMonthlyBill = ref(false);
+const monthlyBill = ref<Bill | null>(null);
+
+function getLastMonthlyPopMonth(): string {
+  try {
+    return localStorage.getItem(MONTHLY_POP_KEY) ?? '';
+  } catch {
+    return '';
+  }
+}
+function setLastMonthlyPopMonth(value: string): void {
+  try {
+    localStorage.setItem(MONTHLY_POP_KEY, value);
+  } catch {
+    /* 隐私模式等场景忽略写入失败 */
+  }
+}
+
+/**
+ * 每月 1 号自动弹出上月结算单（按默认账单模板 + 打印特效）。
+ *
+ * 四道闸门，任一不满足就静默跳过：设置已开 → 今天是 1 号 → 本月还没弹过 → 上月确有账单。
+ * 最后一道很关键：新用户或上月没记读数时会生成不了账单（或金额为 0），
+ * 弹一张空票没有信息量，只会变成打扰。
+ */
+async function maybeShowMonthlyBill(): Promise<void> {
+  if (!settings.autoMonthlyBill) return;
+  if (dayjs().date() !== 1) return;
+  const thisMonth = monthKey();
+  if (getLastMonthlyPopMonth() === thisMonth) return;
+
+  const premiseId = premises.currentPremiseId;
+  if (!premiseId) return;
+  if (!bills.billList.length) await bills.load();
+
+  const ym = prevMonthKey(thisMonth);
+  const bill = bills.billList.find((b) => b.premiseId === premiseId && b.yearMonth === ym);
+  if (!bill || bill.totalCost <= 0) return;
+
+  // 先落标记再显示：若渲染阶段抛错，也不至于每次启动都重弹同一张票
+  setLastMonthlyPopMonth(thisMonth);
+  monthlyBill.value = bill;
+  showMonthlyBill.value = true;
+}
+
+function onMonthlyBillClose(): void {
+  showMonthlyBill.value = false;
+  monthlyBill.value = null;
 }
 
 const showInstall = computed(() => canInstall.value && !installDismissed.value);
@@ -193,20 +252,30 @@ onMounted(async () => {
     showOnboarding.value = true;
   }
 
-  // 启动自动弹出快速记录（若设置开启，且未进入新手引导）。按日期持久化，避免每天重复弹。
+  // 启动自动弹出（若未进入新手引导）。设置未就绪时先补一次 load，
+  // 否则首屏读到的是 store 默认值，用户开过的档位会被当成「关闭」而漏弹。
   try {
-    if (!settings.autoPopQuickRecord) {
+    if (!settings.loaded) {
       await settings.load();
     }
-    if (settings.autoPopQuickRecord && onboarded) {
-      const today = dateKey();
-      if (getLastQuickPopDate() !== today) {
-        setLastQuickPopDate(today);
+    if (onboarded) {
+      // ① 快速记录：off 不弹 / daily 每天首次 / always 每次启动都弹
+      const mode = settings.quickRecordPop;
+      if (mode === 'always') {
         quickRef.value?.open();
+      } else if (mode === 'daily') {
+        const today = dateKey();
+        if (getLastQuickPopDate() !== today) {
+          setLastQuickPopDate(today);
+          quickRef.value?.open();
+        }
       }
+      // ② 月初账单：仅 1 号触发；与快速记录同时命中时账单弹层叠在上层，
+      //    先让用户看结算单（这是月初真正关心的信息），关掉后底下的快速记录仍在。
+      await maybeShowMonthlyBill();
     }
   } catch (err) {
-    logger.error('app', '读取设置或弹出快速记录失败', {
+    logger.error('app', '读取设置或启动自动弹窗失败', {
       message: err instanceof Error ? err.message : String(err),
     });
   }
@@ -273,6 +342,15 @@ onBeforeUnmount(() => {
 
     <!-- 全局快速记录弹窗（启动可按设置自动弹出） -->
     <QuickRecordPopup ref="quickRef" />
+
+    <!-- 月初账单弹层：每月 1 号自动弹出上月结算单（打印特效 + 导出 PDF） -->
+    <MonthlyBillModal
+      v-if="showMonthlyBill && monthlyBill"
+      :bill="monthlyBill"
+      :premise-name="premises.currentPremise?.name ?? ''"
+      :template-id="settings.templateId"
+      @close="onMonthlyBillClose"
+    />
 
     <!-- 新手引导：沉浸式卡片向导（首启 / 设置页重看） -->
     <OnboardingFlow v-if="showOnboarding" @done="onOnboardingDone" />
