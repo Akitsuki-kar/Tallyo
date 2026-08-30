@@ -13,11 +13,11 @@ const readings = useReadingsStore();
 const usage = computed(() => readings.usageOf(props.reading));
 const isNegative = computed(() => usage.value < 0);
 
-// 电=橙(warning) / 水=蓝(primary)
+// 电=暖橘(warning) / 水=海蓝(water)，与全局水电语义色一致
 const typeMeta = computed(() =>
   props.reading.type === 'electricity'
-    ? { label: '电', tagType: 'warning' as const }
-    : { label: '水', tagType: 'primary' as const },
+    ? { label: '电', tagClass: 'is-elec-tag' }
+    : { label: '水', tagClass: 'is-water-tag' },
 );
 const unitLabel = computed(() => (props.reading.type === 'electricity' ? '度' : '吨'));
 
@@ -32,7 +32,7 @@ function onDelete(): void {
 <template>
   <div class="reading-card sdb-card" :class="props.reading.type === 'electricity' ? 'is-electricity' : 'is-water'">
     <div class="reading-card__top">
-      <van-tag :type="typeMeta.tagType" round>{{ typeMeta.label }}</van-tag>
+      <van-tag round :class="typeMeta.tagClass">{{ typeMeta.label }}</van-tag>
       <span class="reading-card__date">{{ props.reading.date }}</span>
       <div class="reading-card__actions">
         <van-icon name="edit" class="reading-card__icon" aria-label="编辑" @click="onEdit" />
@@ -73,7 +73,18 @@ function onDelete(): void {
   background: var(--sdb-warning);
 }
 .reading-card.is-water::before {
-  background: var(--sdb-primary);
+  background: var(--sdb-water);
+}
+/* 类型标签：电=暖橘、水=海蓝（蓝底白字，对比充足可读） */
+.reading-card :deep(.van-tag.is-elec-tag) {
+  background: var(--sdb-warning);
+  color: var(--sdb-on-semantic);
+  border-color: var(--sdb-warning);
+}
+.reading-card :deep(.van-tag.is-water-tag) {
+  background: var(--sdb-water);
+  color: #fff;
+  border-color: var(--sdb-water);
 }
 .reading-card__top {
   display: flex;

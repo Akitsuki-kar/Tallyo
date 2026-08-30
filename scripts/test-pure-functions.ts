@@ -7,7 +7,7 @@
  */
 import { findPreviousReading, relinkChain } from '@/utils/readingChain';
 import { resolveLWW, mergeEntities, mergeSnapshotDetailed } from '@/sync/merge';
-import { monthlyUsage, monthReadings } from '@/utils/billing';
+import { monthlyUsage, monthReadings, dailyUsageSeries } from '@/utils/billing';
 import { calcTieredCost, calcCost, defaultPriceConfig, applySettlement } from '@/utils/pricing';
 import { isQuotaError } from '@/db/guard';
 import { encryptKeyWithPassphrase, decryptKeyWithPassphrase } from '@/sync/crypto';
@@ -275,12 +275,60 @@ function makeReading(overrides: Partial<Reading>): Reading {
   assert(monthlyUsage(items, 'p1', 'electricity', '2024-02') === 70, 'monthlyUsage: 月内多条 = 150-80 = 70（不丢 20+30）');
 }
 
-// 该月首条即历史首条：无更早基准 → 0
+// 该月首条即历史首条、且月内只有这一条：无从推算 → 0
 {
   const items: Reading[] = [
     makeReading({ id: 'only', date: '2024-02-15', reading: 120 }),
   ];
-  assert(monthlyUsage(items, 'p1', 'electricity', '2024-02') === 0, 'monthlyUsage: 无更早基准 → 0');
+  assert(monthlyUsage(items, 'p1', 'electricity', '2024-02') === 0, 'monthlyUsage: 无更早基准且月内单条 → 0');
+}
+
+// 该月首条即历史首条、但月内还有后续抄表 → 退化为「本月首条 → 本月末条」的净额。
+// 旧实现在此整月记 0，导致首次使用所在月的账单永远是 ¥0，且怎么改读数都不动。
+{
+  const items: Reading[] = [
+    makeReading({ id: 'f1', date: '2024-02-03', reading: 100 }),
+    makeReading({ id: 'f2', date: '2024-02-15', reading: 180 }),
+    makeReading({ id: 'f3', date: '2024-02-28', reading: 300 }),
+  ];
+  assert(
+    monthlyUsage(items, 'p1', 'electricity', '2024-02') === 200,
+    'monthlyUsage: 首月多条 = 300-100 = 200（不再整月记 0）',
+  );
+}
+
+// 首月退化口径下，改中间那条读数仍不改变净额（累计表语义：净额只看首尾），
+// 但改首条或末条应当改变 —— 这是「改读数账单要跟着动」的保底行为。
+{
+  const base: Reading[] = [
+    makeReading({ id: 'g1', date: '2024-02-03', reading: 100 }),
+    makeReading({ id: 'g2', date: '2024-02-15', reading: 180 }),
+    makeReading({ id: 'g3', date: '2024-02-28', reading: 300 }),
+  ];
+  const mid = base.map((r) => (r.id === 'g2' ? { ...r, reading: 220 } : r));
+  const tail = base.map((r) => (r.id === 'g3' ? { ...r, reading: 360 } : r));
+  assert(
+    monthlyUsage(mid, 'p1', 'electricity', '2024-02') === 200,
+    'monthlyUsage: 改首月中间读数 → 净额不变（200）',
+  );
+  assert(
+    monthlyUsage(tail, 'p1', 'electricity', '2024-02') === 260,
+    'monthlyUsage: 改首月末条读数 → 净额变 260',
+  );
+}
+
+// 逐日序列在无外部基准时与 monthlyUsage 保持同一口径（sum(series) === monthlyUsage）
+{
+  const items: Reading[] = [
+    makeReading({ id: 'h1', date: '2024-02-03', reading: 100 }),
+    makeReading({ id: 'h2', date: '2024-02-28', reading: 300 }),
+  ];
+  const series = dailyUsageSeries(items, 'p1', 'electricity', '2024-02');
+  const sum = series.reduce((a, b) => a + b, 0);
+  assert(
+    Math.abs(sum - monthlyUsage(items, 'p1', 'electricity', '2024-02')) < 0.5,
+    'dailyUsageSeries: 首月退化口径下与 monthlyUsage 对齐',
+  );
 }
 
 // 表复位导致负净额 → 钳为 0（账单用量不应为负）

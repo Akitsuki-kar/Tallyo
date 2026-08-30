@@ -21,6 +21,19 @@ import { logger } from '@/utils/logger';
 export const useBillsStore = defineStore('bills', () => {
   const bills = ref<Record<string, Bill>>({});
   const currentMonth = ref<string>('');
+  /**
+   * 是否已从 IndexedDB 装载过。
+   *
+   * 存在的意义：computeBill 用内存里的 bills.value[id] 作为「旧账单」来
+   * (a) 判断业务值是否变化（幂等短路）与 (b) 递增 syncVersion。
+   * 若重算发生在装载之前，existing 为 undefined，新账单会从 syncVersion 1 重新起步，
+   * 直接覆盖库里原本更高的版本号 —— 后果有两重：
+   *   ① 增量同步按「syncVersion > 上次同步点」扫描，版本被打回后这次改动永远扫不到，传不上去；
+   *   ② 下一轮拉取时远端的高版本旧账单会按 LWW 胜出，把本地刚算出来的值覆盖回去，
+   *      表现就是「改了读数，账单过一会儿又变回原样」。
+   * 因此任何重算入口都必须先确保账单已装载。
+   */
+  let loaded = false;
 
   const billList = computed(() => Object.values(bills.value).filter((b) => !b.isDeleted));
 
@@ -49,6 +62,7 @@ export const useBillsStore = defineStore('bills', () => {
         if (!b.isDeleted) map[b.id] = b;
       }
       bills.value = map;
+      loaded = true;
     } catch (err) {
       logger.error('store:bills', '加载账单失败', {
         message: err instanceof Error ? err.message : String(err),
@@ -80,7 +94,14 @@ export const useBillsStore = defineStore('bills', () => {
     );
   }
 
+  /** 首次重算前把库里的账单装载进内存（详见 loaded 的注释） */
+  async function ensureLoaded(): Promise<void> {
+    if (loaded) return;
+    await load();
+  }
+
   async function recompute(premiseId: string, yearMonth: string): Promise<Bill> {
+    await ensureLoaded();
     const allReadings = await readingRepo.getAllReadings();
     return computeBill(premiseId, yearMonth, allReadings);
   }
@@ -156,13 +177,24 @@ export const useBillsStore = defineStore('bills', () => {
    * 批量重算某房源的多个月份。
    * 相比循环调用 recompute()，全量读数只从 IndexedDB 取一次 ——
    * 补录历史读数会级联重算数十个月，逐月全表扫描的开销是不可接受的。
+   *
+   * @returns 金额实际发生变化的月份数（幂等短路的月份不计入）。
+   *          调用方据此判断「这次编辑到底有没有影响账单」，用于给用户明确回执：
+   *          累计表按「月末读数 − 月初基准」计费，改动月内中间的抄表记录
+   *          在数学上就不该改变月账单，没有回执用户只会以为「重算没触发」。
    */
-  async function recomputeMonths(premiseId: string, months: string[]): Promise<void> {
-    if (months.length === 0) return;
+  async function recomputeMonths(premiseId: string, months: string[]): Promise<number> {
+    if (months.length === 0) return 0;
+    await ensureLoaded();
     const all = await readingRepo.getAllReadings();
+    let changed = 0;
     for (const m of months) {
-      await computeBill(premiseId, m, all);
+      const before = bills.value[`${premiseId}:${m}`]?.syncVersion;
+      const after = await computeBill(premiseId, m, all);
+      // 幂等短路时 computeBill 原样返回旧账单对象，syncVersion 不变
+      if (after.syncVersion !== before) changed++;
     }
+    return changed;
   }
 
   /**
@@ -171,6 +203,7 @@ export const useBillsStore = defineStore('bills', () => {
    * 只遍历确实有读数的月份，不会凭空造出空账单。
    */
   async function recomputePremise(premiseId: string): Promise<void> {
+    await ensureLoaded();
     const all = await readingRepo.getAllReadings();
     const months = new Set<string>();
     for (const r of all) {
@@ -183,6 +216,7 @@ export const useBillsStore = defineStore('bills', () => {
   }
 
   async function recomputeAll(): Promise<void> {
+    await ensureLoaded();
     // 按 (premiseId, monthKey) 组合去重，避免遍历不存在的 premise×month 组合。
     // 全量读数只取一次，按月分组后复用，避免每条 month 重复扫描 IndexedDB。
     const all = await readingRepo.getAllReadings();

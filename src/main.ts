@@ -98,6 +98,20 @@ async function bootstrap(): Promise<void> {
   const bills = useBillsStore();
   await bills.load();
 
+  // 启动自愈：账单是「读数 × 单价 → 结算取整 → +房租」的派生结果，不是用户录入的事实数据。
+  // 任何一次漏重算（版本升级改了计算口径、同步合并时被远端旧账单盖回、异常中断）都会让
+  // 库里的账单与当前读数对不上，而此前没有任何入口能纠正它 —— 用户改读数发现账单不变时，
+  // 实际看到的往往就是这个历史脏值。这里全量重算一次即可自愈。
+  // recomputeAll 幂等：金额没变的月份不写库、不发事件，不会凭空制造同步流量。
+  try {
+    await bills.recomputeAll();
+  } catch (err) {
+    // 自愈失败不阻断启动（账单页仍会展示库里的值）
+    logger.error('[SDB:bootstrap]', '启动账单自愈重算失败', {
+      message: err instanceof Error ? err.message : String(err),
+    });
+  }
+
   // 高优①：申请 IndexedDB 持久化存储，降低浏览器静默清除本地账本的风险（结果已落日志）
   void requestPersistentStorage().then((status) => {
     logger.info('[SDB:bootstrap]', '持久化存储授权结果', { status });

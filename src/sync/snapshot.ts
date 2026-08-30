@@ -184,10 +184,14 @@ export async function applySnapshot(
   // 远端拉来的 bills 本身已是算好的结果，直接写库即可，无需再算一遍。
   // 这样可避免每次同步都无谓触发全量重算 —— 配合 bills.recompute 的幂等短路，
   // 共同防止「重算 → 版本自增 → 推送 → 对端重算」的跨设备同步死循环。
+  // premises 必须计入：房租（rent / rentVisible）与结算方式（settlement）
+  // 都是账单的计算输入，且「改了只体现在房源上」—— 若不同步重算，
+  // 对端拉到新的房租配置后账单金额会一直停留在旧值，直到下一次改读数才被顺带修正。
   const needRecompute =
     (pulled.readings?.length ?? 0) > 0 ||
     (pulled.prices?.length ?? 0) > 0 ||
-    (pulled.budgets?.length ?? 0) > 0;
+    (pulled.budgets?.length ?? 0) > 0 ||
+    (pulled.premises?.length ?? 0) > 0;
   if (needRecompute) {
     await bills.recomputeAll();
   }

@@ -23,6 +23,10 @@
   --sdb-warning: oklch(80% 0.12 78);
   --sdb-danger: oklch(66% 0.16 27);
 
+  /* 深色：水电专属语义色（电=暖橘、水=提亮海蓝，保证在深底上清晰） */
+  --sdb-electricity: var(--sdb-primary);
+  --sdb-water: oklch(72% 0.12 235); /* 海蓝提亮，深底可读 */
+
   /* 深色：用更深柔影 + 提亮表面表达层次 */
   --sdb-shadow-sm: 0 2px 8px oklch(12% 0.02 40 / 0.4);
   --sdb-shadow: 0 8px 24px oklch(12% 0.02 40 / 0.45);

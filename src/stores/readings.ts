@@ -28,6 +28,11 @@ export type ReadingPayload = Omit<
   'id' | 'createdAt' | 'updatedAt' | 'syncVersion' | 'isDeleted' | 'previousReading'
 >;
 
+/** 编辑读数后的回执：billsChanged = 本次改动实际改变了几个月的账单金额 */
+export interface UpdateReadingResult {
+  billsChanged: number;
+}
+
 export const useReadingsStore = defineStore('readings', () => {
   const items = ref<Reading[]>([]);
   const loading = ref(false);
@@ -102,12 +107,14 @@ export const useReadingsStore = defineStore('readings', () => {
    * · extraMonths 无条件保留：删除某月最后一条读数后该月已无读数，但它的旧账单必须被清零。
    * · 重算是幂等的（isSameBillValue 短路），金额没变的月份不会产生写入与同步事件，
    *   所以「多算几个月」在正确性与同步开销上都是安全的。
+   *
+   * @returns 金额实际发生变化的账单月份数（透传自 recomputeMonths）
    */
   async function relinkAndRecompute(
     premiseId: string,
     type: ReadingType,
     extraMonths: string[] = [],
-  ): Promise<void> {
+  ): Promise<number> {
     const changed = relinkChain(items.value, premiseId, type);
     for (const rec of changed) {
       const updated: Reading = {
@@ -124,7 +131,7 @@ export const useReadingsStore = defineStore('readings', () => {
     for (const rec of changed) {
       months.add(monthKeyFromDate(rec.date));
     }
-    if (months.size === 0) return; // 链未变且无显式月份：无账单需要重算
+    if (months.size === 0) return 0; // 链未变且无显式月份：无账单需要重算
 
     // YYYY-MM 定长字符串，字典序即时间序，可直接比较
     const earliest = [...months].sort()[0];
@@ -135,7 +142,7 @@ export const useReadingsStore = defineStore('readings', () => {
     }
 
     // 按月份升序重算：先算早月再算晚月，日志/事件顺序符合直觉
-    await useBillsStore().recomputeMonths(premiseId, [...months].sort());
+    return useBillsStore().recomputeMonths(premiseId, [...months].sort());
   }
 
   /**
@@ -213,9 +220,12 @@ export const useReadingsStore = defineStore('readings', () => {
     return reading;
   }
 
-  async function updateReading(id: string, patch: Partial<Omit<Reading, 'id'>>): Promise<void> {
+  async function updateReading(
+    id: string,
+    patch: Partial<Omit<Reading, 'id'>>,
+  ): Promise<UpdateReadingResult> {
     const existing = items.value.find((r) => r.id === id);
-    if (!existing) return;
+    if (!existing) return { billsChanged: 0 };
     // 在写回内存前留存旧的链身份（房源 / 类型 / 日期）。
     // 说明：编辑表单（ReadingForm）已锁定 premiseId / type 不可改，正常 UI 路径不会触发链迁移；
     // 但本 store 是数据层，仍需对「读数被迁到另一条链」保持正确 —— 数据导入、WebDAV 同步合并
@@ -238,17 +248,23 @@ export const useReadingsStore = defineStore('readings', () => {
     // A3：patch 涉及 date / reading 会改变前驱后继；迁移链同样需要重建两侧
     const needsRelink = patch.date !== undefined || patch.reading !== undefined || chainMoved;
     if (needsRelink) {
+      let changed = 0;
       // 先修旧链：本条离开后，原链上它的后继需要重新挂到更早的一条上，
       // 且旧房源当月账单必须重算（否则残留已迁走读数产生的用量）。
       if (chainMoved) {
-        await relinkAndRecompute(oldPremiseId, oldType, [monthKeyFromDate(oldDate)]);
+        changed += await relinkAndRecompute(oldPremiseId, oldType, [monthKeyFromDate(oldDate)]);
       }
       // 再修新链：覆盖旧日期与新日期所在月份（跨月编辑时旧月份账单同样要刷新）。
       const extra = new Set<string>([monthKeyFromDate(oldDate), monthKeyFromDate(updated.date)]);
-      await relinkAndRecompute(updated.premiseId, updated.type, [...extra]);
-    } else {
-      await useBillsStore().recompute(updated.premiseId, monthKeyFromDate(updated.date));
+      changed += await relinkAndRecompute(updated.premiseId, updated.type, [...extra]);
+      return { billsChanged: changed };
     }
+    // 未触及 date / reading（例如只改备注）：账单输入没变，正常情况重算会被幂等短路掉
+    return {
+      billsChanged: await useBillsStore().recomputeMonths(updated.premiseId, [
+        monthKeyFromDate(updated.date),
+      ]),
+    };
   }
 
   async function removeReading(id: string): Promise<void> {

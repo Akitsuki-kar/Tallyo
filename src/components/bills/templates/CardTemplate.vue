@@ -199,8 +199,8 @@ const budgetText = computed(() => {
   color: var(--sdb-warning);
 }
 .bill-card-tpl__item-icon.is-water {
-  background: oklch(from var(--sdb-primary) l c h / 0.15);
-  color: var(--sdb-primary);
+  background: oklch(from var(--sdb-water) l c h / 0.15);
+  color: var(--sdb-water);
 }
 .bill-card-tpl__item-icon.is-rent {
   background: oklch(from var(--sdb-success) l c h / 0.15);

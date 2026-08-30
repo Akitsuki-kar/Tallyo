@@ -11,7 +11,11 @@
  *  0 欢迎：价值主张（记读数 → 月底自动出账单）
  *  1 房源：给第一套房子起名（真实改名 premises store）
  *  2 单价：确认/修改水电单价（真实保存 prices store）
- *  3 玩法：三步核心用法说明 → 开始使用
+ *  3 房租：是否记录房租 / 金额 / 是否算进月度账单（真实写 premises store）
+ *  4 玩法：三步核心用法说明 → 开始使用
+ *
+ * 说明：第 3 步是 0.1.1 新增的「房租」功能（rent / rentVisible），
+ * 老版本引导里没有，导致新用户根本不知道账单里还能带房租；这里补齐。
  *
  * 完成/跳过均写入 sdb:onboarded 标记（useOnboarding）。
  */
@@ -21,6 +25,7 @@ import { usePremisesStore } from '@/stores/premises';
 import { usePricesStore } from '@/stores/prices';
 import { logger } from '@/utils/logger';
 import { completeOnboarding } from '@/composables/useOnboarding';
+import { round2 } from '@/utils/format';
 
 const emit = defineEmits<{
   (e: 'done', opts: { tour: boolean }): void; // tour=true 表示走完全程（结束后接交互式 Tour）
@@ -30,7 +35,7 @@ const premisesStore = usePremisesStore();
 const pricesStore = usePricesStore();
 const { list } = storeToRefs(premisesStore);
 
-const STEP_COUNT = 4;
+const STEP_COUNT = 5;
 const step = ref(0);
 
 // ---- 步骤 1：房源命名（回填首启预置的「我的家」） ----
@@ -39,6 +44,14 @@ const premiseName = ref('');
 // ---- 步骤 2：单价确认（回填默认单价） ----
 const elecPrice = ref('0.56');
 const waterPrice = ref('3.5');
+
+// ---- 步骤 3：房租（0.1.1 新增） ----
+/** 是否记录房租；关掉时账单里完全不出现房租，金额与「计入账单」一并清零 */
+const rentEnabled = ref(false);
+/** 月租金额（元/月），空串等价于 0 —— 与房源管理表单保持一致的口径 */
+const rent = ref('');
+/** 房租是否计入月度账单总额（rentVisible），仅在 rentEnabled 时有效 */
+const rentInBill = ref(true);
 
 // ---- 步骤 3：核心玩法示意 ----
 const usageSteps = [
@@ -50,11 +63,16 @@ const usageSteps = [
 onMounted(() => {
   // 回填当前房源名（首启预置「我的家」）；并确保单价已就绪（默认 0.56 / 3.5）
   premiseName.value = list.value[0]?.name ?? '我的家';
-  const premiseId = list.value[0]?.id;
-  if (premiseId) {
-    const cfg = pricesStore.getPrice(premiseId);
+  const premise = list.value[0];
+  if (premise) {
+    const cfg = pricesStore.getPrice(premise.id);
     elecPrice.value = String(cfg.flat.electricity);
     waterPrice.value = String(cfg.flat.water);
+    // 房租回填：设置页「重看新手引导」时不能把用户已填好的房租冲掉
+    const amount = Number(premise.rent) || 0;
+    rentEnabled.value = amount > 0 || premise.rentVisible === true;
+    rent.value = amount > 0 ? String(amount) : '';
+    rentInBill.value = premise.rentVisible === true;
   }
 });
 
@@ -87,6 +105,17 @@ async function onNext(): Promise<void> {
           ...cfg,
           mode: 'flat',
           flat: { electricity: e, water: w },
+        });
+      }
+    } else if (step.value === 3) {
+      // 真实保存房租配置；不收房租时金额与「计入账单」一并清零，
+      // 避免残留一个 rentVisible=true / rent>0 的旧值继续影响账单总额。
+      const premiseId = list.value[0]?.id;
+      if (premiseId) {
+        const amount = rentEnabled.value ? Math.max(0, Number(rent.value) || 0) : 0;
+        await premisesStore.updatePremise(premiseId, {
+          rent: round2(amount),
+          rentVisible: rentEnabled.value && rentInBill.value && amount > 0,
         });
       }
     }
@@ -149,7 +178,7 @@ function finish(tour: boolean): void {
 
         <!-- 1 房源命名 -->
         <section v-else-if="step === 1" key="premise" class="onboard__card sdb-rise">
-          <span class="onboard__step-no">1 / 3</span>
+          <span class="onboard__step-no">1 / 4</span>
           <h2 class="onboard__title">给这套房子起个名字</h2>
           <p class="onboard__desc">多套房子也能分开记，比如「阳光公寓」「老家」。</p>
           <div class="onboard__control">
@@ -166,7 +195,7 @@ function finish(tour: boolean): void {
 
         <!-- 2 单价确认 -->
         <section v-else-if="step === 2" key="price" class="onboard__card sdb-rise">
-          <span class="onboard__step-no">2 / 3</span>
+          <span class="onboard__step-no">2 / 4</span>
           <h2 class="onboard__title">水电单价是多少？</h2>
           <p class="onboard__desc">先填个大概也行，之后随时能在设置里改（还支持阶梯价）。</p>
           <div class="onboard__price-rows">
@@ -203,9 +232,53 @@ function finish(tour: boolean): void {
           </div>
         </section>
 
-        <!-- 3 玩法说明 -->
+        <!-- 3 房租（0.1.1 新增功能） -->
+        <section v-else-if="step === 3" key="rent" class="onboard__card sdb-rise">
+          <span class="onboard__step-no">3 / 4</span>
+          <h2 class="onboard__title">这套房子要记房租吗？</h2>
+          <p class="onboard__desc">
+            记下来的话，可以选择把它一起算进月度账单 —— 月底一眼看到总共要交多少。
+          </p>
+
+          <div class="onboard__switch-row">
+            <div class="onboard__switch-text">
+              <strong>记录房租</strong>
+              <span>自住或不需要算房租就关掉，账单里不会出现这一项</span>
+            </div>
+            <van-switch v-model="rentEnabled" size="22px" aria-label="是否记录房租" />
+          </div>
+
+          <div v-if="rentEnabled" class="onboard__rent-detail">
+            <div class="onboard__price-row">
+              <span class="onboard__price-label">月租</span>
+              <div class="onboard__control onboard__control--price">
+                <input
+                  v-model="rent"
+                  type="number"
+                  inputmode="decimal"
+                  min="0"
+                  step="1"
+                  class="onboard__input"
+                  placeholder="0"
+                  aria-label="月租金额"
+                />
+                <span class="onboard__unit">元/月</span>
+              </div>
+            </div>
+
+            <div class="onboard__switch-row">
+              <div class="onboard__switch-text">
+                <strong>算进月度账单</strong>
+                <span>按上面填的金额全额加进账单总额（不参与水电的取整结算）</span>
+              </div>
+              <van-switch v-model="rentInBill" size="22px" aria-label="房租是否计入账单" />
+            </div>
+          </div>
+        </section>
+
+        <!-- 4 玩法说明 -->
         <section v-else key="usage" class="onboard__card sdb-rise">
-          <span class="onboard__step-no">3 / 3</span>
+          <span class="onboard__step-no">4 / 4</span>
           <h2 class="onboard__title">接下来就这么用</h2>
           <ol class="onboard__usage">
             <li v-for="(u, i) in usageSteps" :key="u.title" :style="{ '--sdb-stagger': i }" class="onboard__usage-item sdb-rise">
@@ -216,6 +289,9 @@ function finish(tour: boolean): void {
               </div>
             </li>
           </ol>
+          <p class="onboard__footnote">
+            房租、水电单价与结算取整、预算预警、多设备同步都在「设置」里，随时可以改。
+          </p>
         </section>
       </Transition>
 
@@ -556,6 +632,42 @@ function finish(tour: boolean): void {
   color: var(--sdb-text);
 }
 
+/* 房租步骤：开关行 */
+.onboard__switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sdb-space-3);
+  background: var(--sdb-surface-2);
+  border-radius: var(--sdb-radius-sm);
+  padding: 12px 14px;
+  text-align: left;
+}
+.onboard__switch-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.onboard__switch-text strong {
+  font-size: var(--sdb-text-base);
+  color: var(--sdb-text);
+}
+.onboard__switch-text span {
+  font-size: var(--sdb-text-sm);
+  line-height: 1.5;
+  color: var(--sdb-text-secondary);
+}
+/* 展开区：开启「记录房租」后才出现，与上方开关之间用虚线分隔 */
+.onboard__rent-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sdb-space-3);
+  margin-top: var(--sdb-space-3);
+  padding-top: var(--sdb-space-3);
+  border-top: 1px dashed var(--sdb-border);
+}
+
 /* 玩法步骤 */
 .onboard__usage {
   list-style: none;
@@ -600,6 +712,14 @@ function finish(tour: boolean): void {
   font-size: var(--sdb-text-sm);
   color: var(--sdb-text-secondary);
   line-height: 1.5;
+}
+/* 收尾脚注：把 0.1.1 的新功能入口一并告知，避免用户以为只有这三项 */
+.onboard__footnote {
+  margin: var(--sdb-space-4) 0 0;
+  font-size: var(--sdb-text-sm);
+  line-height: 1.6;
+  color: var(--sdb-text-tertiary);
+  text-align: left;
 }
 
 /* ---- 主按钮 ---- */

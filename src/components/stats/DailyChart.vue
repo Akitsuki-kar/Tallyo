@@ -58,7 +58,7 @@ const growthEl = ref<HTMLElement | null>(null);
 
 function buildUsage(p: ChartPalette): EChartsOption {
   return {
-    color: [p.primary, p.accent],
+    color: [p.electricity, p.water],
     tooltip: {
       trigger: 'axis',
       backgroundColor: p.surface,
@@ -99,7 +99,7 @@ function buildUsage(p: ChartPalette): EChartsOption {
         yAxisIndex: 0,
         data: eleArr.value,
         barMaxWidth: 16,
-        itemStyle: { color: p.primary, borderRadius: [3, 3, 0, 0] },
+        itemStyle: { color: p.electricity, borderRadius: [3, 3, 0, 0] },
       },
       {
         name: '用水',
@@ -107,7 +107,7 @@ function buildUsage(p: ChartPalette): EChartsOption {
         yAxisIndex: 1,
         data: waterArr.value,
         barMaxWidth: 16,
-        itemStyle: { color: p.accent, borderRadius: [3, 3, 0, 0] },
+        itemStyle: { color: p.water, borderRadius: [3, 3, 0, 0] },
       },
     ],
   };

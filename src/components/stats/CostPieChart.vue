@@ -52,8 +52,8 @@ function build(p: ChartPalette): EChartsOption {
         label: { color: p.text, formatter: '{b}\n{d}%', fontSize: 12 },
         labelLine: { lineStyle: { color: p.axisLine } },
         data: [
-          { name: '电费', value: props.electricity, itemStyle: { color: p.primary } },
-          { name: '水费', value: props.water, itemStyle: { color: p.accent } },
+          { name: '电费', value: props.electricity, itemStyle: { color: p.electricity } },
+          { name: '水费', value: props.water, itemStyle: { color: p.water } },
         ],
       },
     ],

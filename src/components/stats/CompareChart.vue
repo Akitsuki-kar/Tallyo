@@ -16,7 +16,7 @@ const el = ref<HTMLElement | null>(null);
 
 function build(p: ChartPalette): EChartsOption {
   return {
-    color: [p.primary, p.accent],
+    color: [p.electricity, p.water],
     tooltip: {
       trigger: 'axis',
       axisPointer: { type: 'shadow' },
@@ -51,14 +51,14 @@ function build(p: ChartPalette): EChartsOption {
         name: '电费',
         type: 'bar',
         data: props.electricity,
-        itemStyle: { color: p.primary, borderRadius: [4, 4, 0, 0] },
+        itemStyle: { color: p.electricity, borderRadius: [4, 4, 0, 0] },
         barMaxWidth: 22,
       },
       {
         name: '水费',
         type: 'bar',
         data: props.water,
-        itemStyle: { color: p.accent, borderRadius: [4, 4, 0, 0] },
+        itemStyle: { color: p.water, borderRadius: [4, 4, 0, 0] },
         barMaxWidth: 22,
       },
     ],

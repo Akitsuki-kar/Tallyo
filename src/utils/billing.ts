@@ -42,7 +42,7 @@ export function monthReadings(
  * 因此无论月内录了 1 条还是 N 条，结果都等于该月净消耗，不会少计。
  *
  * - 月内无读数 → 0
- * - 该月首条即历史首条（无更早基准）→ 0（无法推算，与旧行为一致）
+ * - 该月首条即历史首条（无更早基准）→ 退化为「本月首条 → 本月末条」的净额（见 resolveBaseline）
  * - 净额为负（如表复位 / 录入倒退）→ 钳为 0，账单用量不应为负
  */
 export function monthlyUsage(
@@ -54,8 +54,27 @@ export function monthlyUsage(
   const inMonth = monthReadings(readings, premiseId, type, yearMonth);
   if (inMonth.length === 0) return 0;
   const last = inMonth[inMonth.length - 1];
-  const baseline = findPreviousReading(readings, premiseId, type, inMonth[0].date);
-  return baseline ? Math.max(0, last.reading - baseline.reading) : 0;
+  const baseline = resolveBaseline(readings, premiseId, type, inMonth);
+  return Math.max(0, last.reading - baseline.reading);
+}
+
+/**
+ * 取某月的计费基准：优先取「本月首条之前」的那条读数。
+ *
+ * 无更早读数时（首次抄表就落在本月，典型如用户从本月才开始用）退化为**本月首条自身**：
+ * · 旧行为是整月记 0 —— 于是首月账单永远是 ¥0，且此后无论怎么改首月读数都纹丝不动，
+ *   用户会认为「改读数不触发账单重算」（这正是 0.1.1 反馈的核心现象）；
+ * · 退化为首条自身后，月内已抄到的那一段（首条 → 末条）能正常计入，
+ *   月初到首次抄表之间那一段确实无从推算，如实记 0 即可；
+ * · 月内只有一条读数时 last === baseline，结果仍是 0，与旧行为一致，不会凭空造量。
+ */
+function resolveBaseline(
+  readings: Reading[],
+  premiseId: string,
+  type: ReadingType,
+  inMonth: Reading[],
+): Reading {
+  return findPreviousReading(readings, premiseId, type, inMonth[0].date) ?? inMonth[0];
 }
 
 // ==================== 日维度统计（0.1.1 新增） ====================
@@ -75,7 +94,8 @@ function dayOfMonth(dateStr: string): number {
  * · 首个区间（上月末基准 → 当月首条读数）的增量**整体归本月**，
  *   摊在「1 号 ~ 首条读数日」之间，因此 sum(series) === monthlyUsage，
  *   不会出现「日统计加起来跟账单对不上」的割裂感；
- * · 无更早基准时整月记 0，与 monthlyUsage 一致（无法推算，不猜）；
+ * · 无更早基准时与 monthlyUsage 同样退化为「本月首条 → 末条」，
+ *   首次抄表日之前的日子记 0（无法推算，不猜）；
  * · 单区间增量为负（表复位 / 录错）钳为 0；
  * · 最后一条读数之后的日子记 0（还没抄表，不臆造数据）。
  *
@@ -93,8 +113,7 @@ export function dailyUsageSeries(
 
   const inMonth = monthReadings(readings, premiseId, type, yearMonth);
   if (inMonth.length === 0) return series;
-  const baseline = findPreviousReading(readings, premiseId, type, inMonth[0].date);
-  if (!baseline) return series;
+  const baseline = resolveBaseline(readings, premiseId, type, inMonth);
 
   let prevValue = baseline.reading;
   let prevDay = 0; // 已分配到的「日」，0 表示月初之前（即首个区间从 1 号起算）

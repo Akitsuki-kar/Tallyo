@@ -46,6 +46,10 @@ export interface ChartPalette {
   success: string;
   warning: string;
   danger: string;
+  /** 电费专属色（暖橘），与 --sdb-electricity 对齐 */
+  electricity: string;
+  /** 水费专属色（海蓝），与 --sdb-water 对齐 */
+  water: string;
   /** 坐标轴线与分割线（半透明，深浅主题通用） */
   axisLine: string;
   splitLine: string;
@@ -62,6 +66,8 @@ const FALLBACK: ChartPalette = {
   success: '#5aa83f',
   warning: '#d9a23a',
   danger: '#c8442f',
+  electricity: '#ef7a2e',
+  water: '#2f7fd1',
   axisLine: 'rgba(133,118,104,0.35)',
   splitLine: 'rgba(133,118,104,0.15)',
 };
@@ -85,6 +91,8 @@ export function readPalette(): ChartPalette {
     success: cssVar('--sdb-success', FALLBACK.success),
     warning: cssVar('--sdb-warning', FALLBACK.warning),
     danger: cssVar('--sdb-danger', FALLBACK.danger),
+    electricity: cssVar('--sdb-electricity', FALLBACK.electricity),
+    water: cssVar('--sdb-water', FALLBACK.water),
     axisLine: FALLBACK.axisLine,
     splitLine: FALLBACK.splitLine,
   };

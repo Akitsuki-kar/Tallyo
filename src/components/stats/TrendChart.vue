@@ -54,9 +54,9 @@ function build(p: ChartPalette): EChartsOption {
         smooth: true,
         showSymbol: false,
         data: props.electricity,
-        itemStyle: { color: p.primary },
+        itemStyle: { color: p.electricity },
         lineStyle: { width: 2 },
-        areaStyle: { color: p.primary, opacity: 0.1 },
+        areaStyle: { color: p.electricity, opacity: 0.1 },
       },
       {
         name: '水费',
@@ -64,9 +64,9 @@ function build(p: ChartPalette): EChartsOption {
         smooth: true,
         showSymbol: false,
         data: props.water,
-        itemStyle: { color: p.accent },
+        itemStyle: { color: p.water },
         lineStyle: { width: 2 },
-        areaStyle: { color: p.accent, opacity: 0.1 },
+        areaStyle: { color: p.water, opacity: 0.1 },
       },
       {
         name: '合计',

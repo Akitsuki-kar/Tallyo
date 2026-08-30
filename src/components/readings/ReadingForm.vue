@@ -155,14 +155,16 @@ async function onSubmit(): Promise<void> {
   }
   submitting.value = true;
   try {
+    let billsChanged = -1; // -1 = 本次不走「账单是否变化」回执（新增模式）
     if (props.editReading) {
       // 编辑模式仅允许修改读数 / 日期 / 备注；
       // premiseId 与 type 已锁定（不下发 patch），读数不会在房源或水电链之间迁移
-      await readings.updateReading(props.editReading.id, {
+      const result = await readings.updateReading(props.editReading.id, {
         reading: form.reading as number,
         date: form.date,
         note: form.note ? form.note : undefined,
       });
+      billsChanged = result.billsChanged;
     } else {
       await readings.addReading({
         premiseId: form.premiseId,
@@ -172,8 +174,14 @@ async function onSubmit(): Promise<void> {
         note: form.note ? form.note : undefined,
       });
     }
-    // 成功提示：若存在「用量为负」警示，一并提示（Vant toast 为单例，合成一条避免被覆盖）
-    const suffix = res.warn ? '（用量为负，请核对）' : '';
+    // 成功提示：可能的附加说明一并合成一条（Vant toast 为单例，多条会互相覆盖）
+    const parts: string[] = [];
+    if (res.warn) parts.push('用量为负，请核对');
+    // 编辑后账单金额毫无变化，需要说明原因：账单按「月末读数 − 月初基准」的净额计费，
+    // 改动月内中间那条抄表记录，在数学上不会改变任何一个月的净额。
+    // 不给回执的话，用户只会以为「重算没触发」。
+    if (billsChanged === 0) parts.push('该读数不影响月度账单金额');
+    const suffix = parts.length > 0 ? `（${parts.join('；')}）` : '';
     showSuccessToast((props.editReading ? '已更新读数' : '已记录读数') + suffix);
     emit('saved');
   } catch (err) {
