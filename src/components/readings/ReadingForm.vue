@@ -136,6 +136,7 @@ function validate(): ValidationResult {
   if (form.reading === null || Number.isNaN(form.reading) || form.reading < 0) {
     return { ok: false, warn: '读数必须为不小于 0 的数字' };
   }
+  if (!form.premiseId) return { ok: false, warn: '请先选择房源' };
   if (!form.date) return { ok: false, warn: '请选择读数日期' };
   // 编辑模式：若新读数小于上期，给出负用量警示（仍允许保存）
   if (props.editReading) {

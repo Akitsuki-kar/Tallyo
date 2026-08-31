@@ -11,6 +11,15 @@ import { monthlyUsage, monthReadings, dailyUsageSeries } from '@/utils/billing';
 import { calcTieredCost, calcCost, defaultPriceConfig, applySettlement } from '@/utils/pricing';
 import { isQuotaError } from '@/db/guard';
 import { encryptKeyWithPassphrase, decryptKeyWithPassphrase } from '@/sync/crypto';
+import {
+  findDuplicateBillGroups,
+  findOrphanBills,
+  findOrphanPremiseRecords,
+  findExpiredTombstones,
+  daysSince,
+  isCleanupDue,
+} from '@/utils/cleanup';
+import { filterPurgedEntities, entityKeyOf } from '@/sync/purge';
 import type { Reading, Bill, Premise, PriceRecord, Budget, Settings } from '@/types';
 
 let passed = 0;
@@ -596,6 +605,191 @@ function near(actual: number, expected: number, message: string): void {
   assert(applySettlement(14, { mode: 'integer', rounding: 'ceil' }) === 14, 'applySettlement: 不足进一 整数不变 14 → 14');
   // 非正成本不触发取整、归零（ceil(0)=0）
   assert(applySettlement(0, { mode: 'integer', rounding: 'ceil' }) === 0, 'applySettlement: 0 不进位');
+}
+
+// ─── 数据自清洗（0.1.2）：核对数据正确性 ───
+// 用户痛点：软删数据长期堆积成冗余；自清洗时需核对「一房一月只应一张账单」，
+// 若发现一个月两张，保留最新的、墓碑最旧的，并随保留的那张重算。
+
+function makeBill(overrides: Partial<Bill> & Record<string, unknown>): Bill {
+  return {
+    id: 'b1',
+    premiseId: 'p1',
+    yearMonth: '2024-02',
+    totalCost: 0,
+    electricityUsage: 0,
+    waterUsage: 0,
+    rent: 0,
+    rentVisible: false,
+    isDeleted: false,
+    createdAt: '2024-02-01T00:00:00Z',
+    updatedAt: '2024-02-01T00:00:00Z',
+    syncVersion: 1,
+    ...overrides,
+  } as unknown as Bill;
+}
+
+// 去重：同 (premiseId, yearMonth) 两条未删账单 → 保留 updatedAt 更新的，墓碑其余
+{
+  const old = makeBill({ id: 'old', updatedAt: '2024-02-01T00:00:00Z' });
+  const fresh = makeBill({ id: 'new', updatedAt: '2024-02-10T00:00:00Z' });
+  const groups = findDuplicateBillGroups([old, fresh]);
+  assert(groups.length === 1, 'dedup: 同一房月两账单 → 1 组');
+  assert(groups[0]?.keep.id === 'new', 'dedup: 保留 updatedAt 更新的那张 (new)');
+  assert(groups[0]?.drop.length === 1 && groups[0]?.drop[0]?.id === 'old', 'dedup: 墓碑较旧的那张 (old)');
+}
+
+// 去重：已软删的不参与（对端已清掉的旧账单不应被当成重复）
+{
+  const a = makeBill({ id: 'a', isDeleted: true });
+  const b = makeBill({ id: 'b' });
+  assert(findDuplicateBillGroups([a, b]).length === 0, 'dedup: 墓碑不参与去重');
+}
+
+// 去重：不同房源 / 不同月份不误判
+{
+  const p1 = makeBill({ id: 'p1', premiseId: 'p1' });
+  const p2 = makeBill({ id: 'p2', premiseId: 'p2' });
+  const jan = makeBill({ id: 'jan', yearMonth: '2024-01' });
+  assert(findDuplicateBillGroups([p1, p2, jan]).length === 0, 'dedup: 不同房源/月份不误判');
+}
+
+// 孤儿账单：金额为 0 且无读数的活账单（且该房源仍活跃）→ 应清理
+{
+  const orphan = makeBill({ id: 'orphan', totalCost: 0, premiseId: 'p1', yearMonth: '2024-02' });
+  const found = findOrphanBills([orphan], [], new Set(['p1']));
+  assert(found.length === 1 && found[0]?.id === 'orphan', 'orphan: 0 元且无读数的活账单 → 孤儿');
+}
+
+// 孤儿账单安全阀：有房租（金额>0）的月份即便没抄表也该出账，不得删
+{
+  const withRent = makeBill({ id: 'rent', totalCost: 1200, rent: 1200, rentVisible: true });
+  assert(findOrphanBills([withRent], [], new Set(['p1'])).length === 0, 'orphan: 有房租的空月不误删');
+}
+
+// 孤儿账单双保险：即便重算异常把带租账单算成 totalCost=0，租金安全阀也兜住不删
+{
+  const withRentZeroCost = makeBill({ id: 'rent0', totalCost: 0, rent: 1200, rentVisible: true });
+  assert(
+    findOrphanBills([withRentZeroCost], [], new Set(['p1'])).length === 0,
+    'orphan: 租金安全阀兜底（totalCost 被错算为 0 也不删）',
+  );
+}
+
+// 孤儿账单安全阀：房源已软删时其账单看起来「无读数」但不可删（恢复房源后要原样回来）
+{
+  const orphan = makeBill({ id: 'orphan' });
+  assert(findOrphanBills([orphan], [], new Set(['p-other'])).length === 0, 'orphan: 房源不在活跃集 → 不删');
+}
+
+// 孤儿账单：该月有读数 → 不是孤儿
+{
+  const b = makeBill({ id: 'b' });
+  const reading = { id: 'r', premiseId: 'p1', date: '2024-02-15', isDeleted: false } as unknown as Reading;
+  assert(findOrphanBills([b], [reading], new Set(['p1'])).length === 0, 'orphan: 该月有读数 → 不是孤儿');
+}
+
+// ─── 无主房源记录（0.1.2 根因修复）───
+// 用户痛点：曾因输入侧未校验 premiseId，产生 premiseId="" 的读数与影子账单，
+// 自清洗应识别并清除。关键约定：allPremiseIds 用「全量」房源集（含软删），
+// 故归属「已被软删房源」的记录不算孤儿（恢复房源后要原样回来）；只有 "" 或不存在的才清。
+
+function makeRecord(id: string, premiseId: string, isDeleted = false): { id: string; premiseId: string; isDeleted: boolean } {
+  return { id, premiseId, isDeleted };
+}
+
+// 空字符串 premiseId（脏数据根因）→ 孤儿
+{
+  const rec = makeRecord('empty', '');
+  const found = findOrphanPremiseRecords([rec], new Set(['p1']));
+  assert(found.length === 1 && found[0]?.id === 'empty', 'premiseOrphan: premiseId="" → 孤儿');
+}
+
+// 不存在的 premiseId → 孤儿
+{
+  const rec = makeRecord('ghost', 'p-none');
+  assert(findOrphanPremiseRecords([rec], new Set(['p1'])).length === 1, 'premiseOrphan: 不存在的房源 → 孤儿');
+}
+
+// 归属「已软删房源」的记录不算孤儿（allPremiseIds 含软删房源）
+{
+  const rec = makeRecord('kept', 'p-deleted');
+  const allIds = new Set(['p1', 'p-deleted']); // p-deleted 在集内（即便 isDeleted）
+  assert(findOrphanPremiseRecords([rec], allIds).length === 0, 'premiseOrphan: 软删房源的记录不算孤儿');
+}
+
+// 软删记录（记录自身 isDeleted）永远不参与
+{
+  const rec = makeRecord('tomb', '', true);
+  assert(findOrphanPremiseRecords([rec], new Set(['p1'])).length === 0, 'premiseOrphan: 软删记录本身不计');
+}
+
+// 正常记录 → 不是孤儿
+{
+  const rec = makeRecord('ok', 'p1');
+  assert(findOrphanPremiseRecords([rec], new Set(['p1'])).length === 0, 'premiseOrphan: 正常记录 → 不是孤儿');
+}
+
+// 混合：一条空、一条软删房源、一条正常 → 只清空的
+{
+  const items = [
+    makeRecord('a', ''),
+    makeRecord('b', 'p-deleted'),
+    makeRecord('c', 'p1'),
+  ];
+  const found = findOrphanPremiseRecords(items, new Set(['p1', 'p-deleted']));
+  assert(found.length === 1 && found[0]?.id === 'a', 'premiseOrphan: 混合场景只清空房源的一条');
+}
+
+// ─── filterPurgedEntities 回归：标记只挡墓碑，不挡活记录（同步循环根因）───
+// 这正是「活房源孤儿不能用 purgeEntities」的原因：即便为某 id 写了 PurgeMarker，
+// 同步 pull 回来的「活记录」(isDeleted:false) 也不会被 filterPurgedEntities 丢弃，
+// 会原样写回本地 → 清了又回来。因此活孤儿必须先软删成墓碑、再走 step5 的 purge。
+{
+  const key = entityKeyOf('readings', { id: 'x' } as never);
+  const marker = { key, store: 'readings' as const, id: 'x', purgedAt: new Date().toISOString() };
+  // 活记录命中标记 → 不被丢（这正是循环的根；方案 A 据此改成软删）
+  const live = filterPurgedEntities(
+    { readings: [{ id: 'x', premiseId: '', isDeleted: false } as unknown as Reading] },
+    [marker],
+  );
+  assert((live.readings?.length ?? 0) === 1, 'filterPurgedEntities: 活记录命中标记也不被丢（根因）');
+  // 墓碑命中标记 → 被丢（purgeEntities 只应在墓碑上调用）
+  const tomb = filterPurgedEntities(
+    { readings: [{ id: 'x', premiseId: '', isDeleted: true } as unknown as Reading] },
+    [marker],
+  );
+  assert((tomb.readings?.length ?? 0) === 0, 'filterPurgedEntities: 墓碑命中标记 → 被丢');
+}
+
+// 过期墓碑：isDeleted 且超过保留期 → 清理；未到期 / 活数据 → 保留
+{
+  const past = Date.now() - 40 * 86_400_000;
+  const recent = Date.now() - 5 * 86_400_000;
+  const expired = [{ isDeleted: true, updatedAt: new Date(past).toISOString() }];
+  const freshTomb = [{ isDeleted: true, updatedAt: new Date(recent).toISOString() }];
+  const alive = [{ isDeleted: false, updatedAt: new Date(past).toISOString() }];
+  assert(findExpiredTombstones(expired as never, 30, new Date()).length === 1, 'expired: 超期墓碑 → 清理');
+  assert(findExpiredTombstones(freshTomb as never, 30, new Date()).length === 0, 'expired: 未到期墓碑 → 保留');
+  assert(findExpiredTombstones(alive as never, 30, new Date()).length === 0, 'expired: 活数据不动');
+}
+
+// 清理到期判定：off 永不跑；从未清理过 → 该跑；周/月按间隔
+{
+  const now = new Date();
+  const dAgo = (n: number) => new Date(now.getTime() - n * 86_400_000).toISOString();
+  assert(isCleanupDue(undefined, 'off', now) === false, 'due: off 永不跑');
+  assert(isCleanupDue('2024-01-01T00:00:00Z', 'off', now) === false, 'due: off 即便曾清理也不跑');
+  assert(isCleanupDue(undefined, 'weekly', now) === true, 'due: 从未清理 → 周清该跑');
+  assert(isCleanupDue(dAgo(3), 'weekly', now) === false, 'due: 周清 3 天内不跑');
+  assert(isCleanupDue(dAgo(10), 'weekly', now) === true, 'due: 周清超 7 天 → 跑');
+  assert(isCleanupDue(dAgo(20), 'monthly', now) === false, 'due: 月清 20 天内不跑');
+  assert(isCleanupDue(dAgo(40), 'monthly', now) === true, 'due: 月清超 30 天 → 跑');
+}
+
+// daysSince：损坏时间戳 → 视为已过期（交给清理处理）
+{
+  assert(daysSince('not-a-date', new Date()) === Number.POSITIVE_INFINITY, 'daysSince: 损坏时间戳 → 无限');
 }
 
 // ─── 结果汇总 ───

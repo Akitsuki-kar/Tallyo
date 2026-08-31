@@ -197,8 +197,16 @@ export const useReadingsStore = defineStore('readings', () => {
   }
 
   async function addReading(payload: ReadingPayload): Promise<Reading> {
+    // 录入侧硬校验：读数必须归属一个真实存在的房源，禁止空房源落库——
+    // 否则这条读数在任何 UI 都显示不出来，且账单生成会为这个不存在的房源造出全 0 影子账单（见 2026-08-31 导出）。
+    const premiseId = payload.premiseId;
+    if (!premiseId) throw new Error('读数必须归属一个房源，请先选择房源');
+    const premiseStore = usePremisesStore();
+    if (premiseStore.loaded && !premiseStore.items.some((p) => p.id === premiseId)) {
+      throw new Error('读数归属的房源不存在，无法保存');
+    }
     // A2：改用按日期严格早于的 findPreviousReading，而非 latestByType
-    const prev = findPreviousReading(items.value, payload.premiseId, payload.type, payload.date);
+    const prev = findPreviousReading(items.value, premiseId, payload.type, payload.date);
     const now = new Date().toISOString();
     const reading: Reading = {
       ...payload,
@@ -327,6 +335,7 @@ export const useReadingsStore = defineStore('readings', () => {
     usageOf,
     load,
     relinkChains,
+    relinkAndRecompute,
     addReading,
     updateReading,
     removeReading,

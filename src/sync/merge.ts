@@ -15,7 +15,9 @@ import type {
   PriceRecord,
   Budget,
   Settings,
+  PurgeMarker,
 } from '@/types';
+import { mergePurgeMarkers } from '@/sync/purge';
 
 /** 远端 data.json 的内容结构（绝不包含 syncConfig / passwordEnc） */
 export interface SyncSnapshot {
@@ -27,6 +29,12 @@ export interface SyncSnapshot {
   prices: PriceRecord[];
   budgets: Budget[];
   settings?: Settings; // 应用偏好（用户已同意跨设备同步）
+  /**
+   * 永久删除标记（0.1.2 新增，可选字段）。
+   * 保持可选且**不提升 schemaVersion**：老客户端只读取已知字段，遇到它会直接忽略；
+   * 老客户端上传的快照没有这个字段，新客户端按空数组处理。双向兼容，无需断代升级。
+   */
+  purges?: PurgeMarker[];
 }
 
 /** 合并统计（供 UI 汇总提示） */
@@ -161,6 +169,7 @@ export function mergeSnapshotDetailed(
   const prices = mergeEntities(local.prices, remote.prices, (p: PriceRecord) => p.premiseId);
   const budgets = mergeEntities(local.budgets, remote.budgets, (b: Budget) => b.premiseId);
   const settings = mergeSettings(local.settings, remote.settings);
+  const purges = mergePurgeMarkers(local.purges ?? [], remote.purges ?? []);
 
   const merged: SyncSnapshot = {
     schemaVersion: 1,
@@ -171,6 +180,7 @@ export function mergeSnapshotDetailed(
     prices: prices.merged,
     budgets: budgets.merged,
     ...(settings.merged ? { settings: settings.merged } : {}),
+    purges: purges.merged,
   };
 
   const pulled: Partial<SyncSnapshot> = {
@@ -180,8 +190,11 @@ export function mergeSnapshotDetailed(
     prices: prices.pulled,
     budgets: budgets.pulled,
     ...(settings.pulled ? { settings: settings.pulled } : {}),
+    purges: purges.pulled,
   };
 
+  // 统计只数「业务实体」，永久删除标记不计入：
+  // 它们是同步协议的元数据，混进拉取/推送条数会让 UI 的「N 项改动」与用户感知对不上。
   const stats: MergeStats = {
     pulled:
       readings.pulled.length +

@@ -1,6 +1,6 @@
 [package]
 name = "tallyo"
-version = "0.1.1"
+version = "0.1.2"
 description = "Tallyo (水电动账) - 离线优先的水电读数记账原生壳"
 authors = ["Akitsuki_Kar"]
 edition = "2021"

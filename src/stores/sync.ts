@@ -12,6 +12,8 @@ import { createWebdavClient } from '@/sync/webdavClient';
 import { acquireLock, releaseLock } from '@/sync/lock';
 import { buildLocalSnapshot, applySnapshot, parseRemoteSnapshot, emptySnapshot } from '@/sync/snapshot';
 import { mergeSnapshotDetailed } from '@/sync/merge';
+import { settlePurgeMarkers, stripPurgedEntities } from '@/sync/purge';
+import * as purgeRepo from '@/db/repositories/purgeRepo';
 import type { MergeStats, SyncSnapshot } from '@/sync/merge';
 import { eventBus, EVENTS } from '@/utils/eventBus';
 import { useSettingsStore } from '@/stores/settings';
@@ -208,7 +210,11 @@ export const useSyncStore = defineStore('sync', () => {
     });
   }
 
-  /** 是否有需要写回本地的远端数据 */
+  /**
+   * 是否有需要写回本地的远端数据。
+   * 永久删除标记必须计入：只有标记、没有任何实体的那一轮同样要落库
+   * （否则对端的「清空回收站」永远传不过来）。
+   */
   function hasPulled(pulled: Partial<SyncSnapshot>): boolean {
     return (
       (pulled.readings?.length ?? 0) > 0 ||
@@ -216,6 +222,7 @@ export const useSyncStore = defineStore('sync', () => {
       (pulled.premises?.length ?? 0) > 0 ||
       (pulled.prices?.length ?? 0) > 0 ||
       (pulled.budgets?.length ?? 0) > 0 ||
+      (pulled.purges?.length ?? 0) > 0 ||
       !!pulled.settings
     );
   }
@@ -270,6 +277,9 @@ export const useSyncStore = defineStore('sync', () => {
       let attempt = 0;
       while (true) {
         progress.value = { phase: '合并数据', done: 2, total: 4 };
+        // 先结算永久删除标记：已作废或已确认生效的标记不应再参与本轮剔除，
+        // 否则「对端又恢复了的记录」会被本地一枚过期标记继续摘掉，造成静默丢数据。
+        await settlePurgeMarkers(remoteSnap);
         const localSnap = await buildLocalSnapshot({
           syncSettings: config.value.syncSettings,
         });
@@ -288,8 +298,13 @@ export const useSyncStore = defineStore('sync', () => {
         }
 
         progress.value = { phase: '上传快照', done: 3, total: 4 };
+        // 上传前把「命中标记的墓碑」从快照里摘掉，远端文件里这条记录才真的消失。
+        // 重新读一次标记：applySnapshot 期间可能刚落地了对端推来的新标记，
+        // 用合并结果里的旧数组会漏掉它们（最多只是晚一轮生效，但没必要留这个尾巴）。
+        const pushMarkers = await purgeRepo.getAllPurges();
+        const toPush = stripPurgedEntities({ ...merged, purges: pushMarkers }, pushMarkers);
         try {
-          remoteEtag = await client.put(DATA_FILE, JSON.stringify(merged), remoteEtag);
+          remoteEtag = await client.put(DATA_FILE, JSON.stringify(toPush), remoteEtag);
           break;
         } catch (putErr) {
           if (isSdbError(putErr) && putErr.kind === 'conflict' && attempt < 1) {

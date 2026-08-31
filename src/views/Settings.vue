@@ -26,6 +26,7 @@ import { useBillsStore } from '@/stores/bills';
 import { useSyncStore } from '@/stores/sync';
 import { usePWAInstall } from '@/composables/usePWAInstall';
 import { useSyncStatus } from '@/composables/useSyncStatus';
+import { useTrashStore } from '@/stores/trash';
 import { exportData, importData } from '@/utils/dataExport';
 import { logger } from '@/utils/logger';
 import type { DefaultView, BillTemplateId, ThemeMode, QuickRecordPop } from '@/types';
@@ -42,6 +43,7 @@ const prices = usePricesStore();
 const readings = useReadingsStore();
 const bills = useBillsStore();
 const syncStore = useSyncStore();
+const trashStore = useTrashStore();
 const { canInstall, prompt: promptInstall } = usePWAInstall();
 const { online } = useSyncStatus();
 
@@ -65,6 +67,14 @@ const currentInitial = computed(() => currentPremise.value?.name?.charAt(0) ?? '
 const premiseCount = computed(() => premises.list.length);
 const readingsTotal = computed(() => readings.items.filter((r) => !r.isDeleted).length);
 const billsTotal = computed(() => bills.billList.length);
+// ---- 回收站入口摘要 ----
+// 设置页只做「概览」：具体的恢复 / 清理动作都在回收站页，避免这里出现高危操作入口。
+const trashCount = computed(() => trashStore.count);
+const trashHint = computed(() => {
+  if (trashCount.value === 0) return '没有待处理的删除记录';
+  if (trashStore.expiringCount > 0) return `${trashStore.expiringCount} 条已到期，可清理`;
+  return '可恢复或彻底删除';
+});
 const lastSyncLabel = computed(() => {
   const t = syncStore.lastSyncAt;
   if (!t) return '未同步';
@@ -202,6 +212,8 @@ onMounted(async () => {
     if (premises.currentPremiseId) await prices.ensureDefault(premises.currentPremiseId);
     if (!readings.items.length) await readings.load();
     if (!bills.billList.length) await bills.load();
+    // 回收站计数是设置页的一个角标，进页时拉一次即可（列表本体在回收站页才需要完整数据）
+    await trashStore.load();
   } catch (err) {
     logger.error('settings:view', '初始化设置页失败', {
       message: err instanceof Error ? err.message : String(err),
@@ -350,6 +362,15 @@ onMounted(async () => {
           <span class="sdb-row__v">{{ online ? '已同步' : '离线' }}</span>
           <span class="sdb-row__chev">›</span>
         </div>
+        <div class="sdb-row" role="button" tabindex="0" @click="router.push('/trash')">
+          <span class="sdb-row__ico">🗑️</span>
+          <span class="sdb-row__txt">
+            <span class="sdb-row__t">回收站</span>
+            <span class="sdb-row__d">{{ trashHint }}</span>
+          </span>
+          <span v-if="trashCount > 0" class="sdb-row__v">{{ trashCount }} 条</span>
+          <span class="sdb-row__chev">›</span>
+        </div>
         <div class="sdb-row" role="button" tabindex="0" @click="onExport">
           <span class="sdb-row__ico">📤</span>
           <span class="sdb-row__txt">
@@ -390,7 +411,7 @@ onMounted(async () => {
         <div class="sdb-row" role="button" tabindex="0">
           <span class="sdb-row__ico">🏷️</span>
           <span class="sdb-row__txt"><span class="sdb-row__t">版本</span></span>
-          <span class="sdb-row__v">0.1.1</span>
+          <span class="sdb-row__v">0.1.2</span>
         </div>
         <div class="sdb-chips">
           <button class="sdb-chip" type="button" @click="showAuthorSheet = true"><em>✍️</em>作者信息</button>

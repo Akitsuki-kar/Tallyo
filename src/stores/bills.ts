@@ -184,7 +184,7 @@ export const useBillsStore = defineStore('bills', () => {
    *          在数学上就不该改变月账单，没有回执用户只会以为「重算没触发」。
    */
   async function recomputeMonths(premiseId: string, months: string[]): Promise<number> {
-    if (months.length === 0) return 0;
+    if (!premiseId || months.length === 0) return 0;
     await ensureLoaded();
     const all = await readingRepo.getAllReadings();
     let changed = 0;
@@ -203,6 +203,7 @@ export const useBillsStore = defineStore('bills', () => {
    * 只遍历确实有读数的月份，不会凭空造出空账单。
    */
   async function recomputePremise(premiseId: string): Promise<void> {
+    if (!premiseId) return;
     await ensureLoaded();
     const all = await readingRepo.getAllReadings();
     const months = new Set<string>();
@@ -215,20 +216,28 @@ export const useBillsStore = defineStore('bills', () => {
     }
   }
 
-  async function recomputeAll(): Promise<void> {
+  /**
+   * @returns 金额实际发生变化的月份数（幂等短路的月份不计入），
+   *          供回收站自清洗生成「重算了 N 个月」的回执。原有调用方忽略返回值即可。
+   */
+  async function recomputeAll(): Promise<number> {
     await ensureLoaded();
     // 按 (premiseId, monthKey) 组合去重，避免遍历不存在的 premise×month 组合。
     // 全量读数只取一次，按月分组后复用，避免每条 month 重复扫描 IndexedDB。
     const all = await readingRepo.getAllReadings();
     const pairs = new Set<string>();
     for (const r of all) {
-      if (r.isDeleted) continue;
+      if (r.isDeleted || !r.premiseId) continue;
       pairs.add(`${r.premiseId}\u0000${monthKeyFromDate(r.date)}`); // \u0000 作分隔符防碰撞
     }
+    let changed = 0;
     for (const pair of pairs) {
       const [premiseId, yearMonth] = pair.split('\u0000');
-      await computeBill(premiseId, yearMonth, all);
+      const before = bills.value[`${premiseId}:${yearMonth}`]?.syncVersion;
+      const after = await computeBill(premiseId, yearMonth, all);
+      if (after.syncVersion !== before) changed++;
     }
+    return changed;
   }
 
   return {

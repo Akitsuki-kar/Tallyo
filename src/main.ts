@@ -23,6 +23,7 @@ import { useBudgetsStore } from '@/stores/budgets';
 import { useReadingsStore } from '@/stores/readings';
 import { useBillsStore } from '@/stores/bills';
 import { useSyncStore } from '@/stores/sync';
+import { useTrashStore } from '@/stores/trash';
 import { installExternalLinkInterceptor } from '@/native/openExternal';
 import { requestPersistentStorage } from '@/db/database';
 import { logger } from '@/utils/logger';
@@ -108,6 +109,19 @@ async function bootstrap(): Promise<void> {
   } catch (err) {
     // 自愈失败不阻断启动（账单页仍会展示库里的值）
     logger.error('[SDB:bootstrap]', '启动账单自愈重算失败', {
+      message: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  // 体验⑭：启动自清洗（周清/月清，见 stores/trash.ts）。best-effort，失败不影响主流程。
+  // 放在启动账单自愈之后：自愈已把账单口径拉齐，这里再跑去重/重算不会重复做功；
+  // 清理产生的永久删除先落本地（含 PurgeMarker），再随随后的自动同步推到各端，
+  // 避免出现「本地删了、远端没删」的窗口。频率=off（默认）或从未到期限时本步直接跳过。
+  try {
+    const trashStore = useTrashStore();
+    await trashStore.runAutoCleanupIfDue();
+  } catch (err) {
+    logger.warn('[SDB:bootstrap]', '启动自清洗跳过', {
       message: err instanceof Error ? err.message : String(err),
     });
   }

@@ -4,12 +4,13 @@
  * 版本历史：
  * v1 — 初始版本，创建全部 object store 与基础索引。
  * v2 — 新增 readings 复合索引 [premiseId, date]（优化月度查询，避免全量扫描再 JS filter）。
+ * v3 — 新增 purges store（永久删除标记，回收站 / 自清洗的跨设备墓碑回收协议）。
  */
 import type { DBSchema, IDBPDatabase, IDBPTransaction, StoreNames } from 'idb';
-import type { Reading, Bill, Premise, PriceRecord, Budget, KvRecord } from '@/types';
+import type { Reading, Bill, Premise, PriceRecord, Budget, KvRecord, PurgeMarker } from '@/types';
 
 export const DB_NAME = 'shuidian-dongzhang';
-export const DB_VERSION = 2;
+export const DB_VERSION = 3;
 
 export interface SdbDBSchema extends DBSchema {
   readings: {
@@ -70,6 +71,15 @@ export interface SdbDBSchema extends DBSchema {
       updatedAt: string;
       syncVersion: number;
       isDeleted: number;
+    };
+  };
+  /** 永久删除标记（详见 types/models.ts PurgeMarker 的说明） */
+  purges: {
+    key: string;
+    value: PurgeMarker;
+    indexes: {
+      store: string;
+      purgedAt: string;
     };
   };
 }
@@ -148,8 +158,18 @@ export function createStores(
     }
   }
 
+  // ── v3：新增 purges store（永久删除标记） ──
+  // 存量库此前从未产生过标记，无需回填数据。
+  if (oldVersion < 3) {
+    if (!db.objectStoreNames.contains('purges')) {
+      const s = db.createObjectStore('purges', { keyPath: 'key' });
+      s.createIndex('store', 'store');
+      s.createIndex('purgedAt', 'purgedAt');
+    }
+  }
+
   // ── 后续版本迁移示例（预留骨架） ──
-  // if (oldVersion < 3) {
-  //   // v3 变更...
+  // if (oldVersion < 4) {
+  //   // v4 变更...
   // }
 }

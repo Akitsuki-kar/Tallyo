@@ -9,7 +9,9 @@ import type {
   DefaultView,
   BillTemplateId,
   QuickRecordPop,
+  CleanupFrequency,
 } from '@/types';
+import { DEFAULT_RETENTION_DAYS } from '@/utils/cleanup';
 import * as kvRepo from '@/db/repositories/kvRepo';
 import { applyThemeMode } from '@/composables/useTheme';
 import { logger } from '@/utils/logger';
@@ -26,7 +28,22 @@ const DEFAULT_SETTINGS: Settings = {
   autoBackupEnabled: false,
   lastAutoBackupAt: '',
   keyBackupAt: '',
+  trashAutoClean: 'off',
+  trashRetentionDays: DEFAULT_RETENTION_DAYS,
+  lastCleanedAt: '',
 };
+
+/** 归一化清理频率：远端快照被手改 / 未来新增枚举回传到旧客户端时，一律回落 'off'（宁可不自动删） */
+function normalizeCleanupFrequency(v: Partial<Settings> | undefined): CleanupFrequency {
+  const raw = v?.trashAutoClean;
+  return raw === 'weekly' || raw === 'monthly' ? raw : 'off';
+}
+
+/** 归一化墓碑保留天数：非法值（负数 / NaN / 0）回落默认档，避免「保留 0 天」把回收站变成即删 */
+function normalizeRetentionDays(v: Partial<Settings> | undefined): number {
+  const raw = v?.trashRetentionDays;
+  return typeof raw === 'number' && Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : DEFAULT_RETENTION_DAYS;
+}
 
 /**
  * 解析「启动弹快速记录」的时机，兼容 0.1.0 的布尔开关。
@@ -54,6 +71,9 @@ export const useSettingsStore = defineStore('settings', () => {
   const autoBackupEnabled = ref<boolean>(DEFAULT_SETTINGS.autoBackupEnabled ?? false);
   const lastAutoBackupAt = ref<string>(DEFAULT_SETTINGS.lastAutoBackupAt ?? '');
   const keyBackupAt = ref<string>(DEFAULT_SETTINGS.keyBackupAt ?? '');
+  const trashAutoClean = ref<CleanupFrequency>(DEFAULT_SETTINGS.trashAutoClean ?? 'off');
+  const trashRetentionDays = ref<number>(DEFAULT_SETTINGS.trashRetentionDays ?? DEFAULT_RETENTION_DAYS);
+  const lastCleanedAt = ref<string>(DEFAULT_SETTINGS.lastCleanedAt ?? '');
   /**
    * 是否已从 IndexedDB 读过一次设置。
    * 调用方（App.vue 启动弹窗判定）需要区分「用户确实关了这项」和「还没读库，现在拿到的是默认值」——
@@ -77,6 +97,9 @@ export const useSettingsStore = defineStore('settings', () => {
         autoBackupEnabled.value = v.autoBackupEnabled ?? false;
         lastAutoBackupAt.value = v.lastAutoBackupAt ?? '';
         keyBackupAt.value = v.keyBackupAt ?? '';
+        trashAutoClean.value = normalizeCleanupFrequency(v);
+        trashRetentionDays.value = normalizeRetentionDays(v);
+        lastCleanedAt.value = v.lastCleanedAt ?? '';
       }
     } catch (err) {
       logger.error('store:settings', '加载设置失败', {
@@ -99,6 +122,9 @@ export const useSettingsStore = defineStore('settings', () => {
     if (patch.autoBackupEnabled !== undefined) autoBackupEnabled.value = patch.autoBackupEnabled;
     if (patch.lastAutoBackupAt !== undefined) lastAutoBackupAt.value = patch.lastAutoBackupAt;
     if (patch.keyBackupAt !== undefined) keyBackupAt.value = patch.keyBackupAt;
+    if (patch.trashAutoClean !== undefined) trashAutoClean.value = normalizeCleanupFrequency(patch);
+    if (patch.trashRetentionDays !== undefined) trashRetentionDays.value = normalizeRetentionDays(patch);
+    if (patch.lastCleanedAt !== undefined) lastCleanedAt.value = patch.lastCleanedAt;
     updatedAt.value = now;
 
     const value: Settings = {
@@ -113,6 +139,9 @@ export const useSettingsStore = defineStore('settings', () => {
       autoBackupEnabled: autoBackupEnabled.value,
       lastAutoBackupAt: lastAutoBackupAt.value,
       keyBackupAt: keyBackupAt.value,
+      trashAutoClean: trashAutoClean.value,
+      trashRetentionDays: trashRetentionDays.value,
+      lastCleanedAt: lastCleanedAt.value,
     };
     const existing = await kvRepo.getKv<Settings>(SETTINGS_KEY);
     const rec = {
@@ -161,6 +190,9 @@ export const useSettingsStore = defineStore('settings', () => {
     autoBackupEnabled.value = next.autoBackupEnabled ?? false;
     lastAutoBackupAt.value = next.lastAutoBackupAt ?? '';
     keyBackupAt.value = next.keyBackupAt ?? '';
+    trashAutoClean.value = normalizeCleanupFrequency(next);
+    trashRetentionDays.value = normalizeRetentionDays(next);
+    lastCleanedAt.value = next.lastCleanedAt ?? '';
     // 沿用远端 updatedAt：与远端保持同版本，避免下一轮又被判为「本地更新」
     updatedAt.value = remote.updatedAt;
 
@@ -172,6 +204,9 @@ export const useSettingsStore = defineStore('settings', () => {
       quickRecordPop: quickRecordPop.value,
       autoMonthlyBill: autoMonthlyBill.value,
       autoPopQuickRecord: quickRecordPop.value !== 'off',
+      trashAutoClean: trashAutoClean.value,
+      trashRetentionDays: trashRetentionDays.value,
+      lastCleanedAt: lastCleanedAt.value,
       updatedAt: remote.updatedAt,
     };
     const existing = await kvRepo.getKv<Settings>(SETTINGS_KEY);
@@ -195,6 +230,9 @@ export const useSettingsStore = defineStore('settings', () => {
     autoBackupEnabled,
     lastAutoBackupAt,
     keyBackupAt,
+    trashAutoClean,
+    trashRetentionDays,
+    lastCleanedAt,
     loaded,
     isDark,
     load,

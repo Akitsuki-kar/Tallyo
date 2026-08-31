@@ -26,6 +26,37 @@ export type RoundingMode = 'round' | 'floor' | 'ceil';
 /** 启动自动弹快速记录的时机：关闭 / 每天首次打开 / 每次打开 */
 export type QuickRecordPop = 'off' | 'daily' | 'always';
 
+/**
+ * 回收站条目的数据类别。
+ * 取值直接复用 IndexedDB 的 object store 名，避免「UI 类别 → store」的映射表。
+ * kv（settings / syncConfig）不进回收站：设置是单条全局记录，没有「删一条」的语义。
+ */
+export type TrashStoreName = 'readings' | 'bills' | 'premises' | 'prices' | 'budgets';
+
+/** 回收站自动清理频率：关闭 / 每周 / 每月 */
+export type CleanupFrequency = 'off' | 'weekly' | 'monthly';
+
+/**
+ * 永久删除标记（墓碑回收协议的载体，0.1.2 新增）。
+ *
+ * 为什么需要它：同步是「两侧全量快照按主键 LWW 合并」，**删除只能靠墓碑表达** ——
+ * 本地把记录物理删掉后，下一轮合并看到「本地无此键、远端有墓碑」会判定为远端胜出，
+ * 把墓碑重新拉回来。于是「清空回收站」在开启同步的设备上等于没删。
+ *
+ * 解决：永久删除不在本地留记录，而是留一枚极小的标记随快照传播，
+ * 各端据此把对应墓碑从自己的库和远端快照里真正剔除（详见 src/sync/purge.ts）。
+ * 标记本身在确认远端已无该实体后自动回收，不会无限增长。
+ */
+export interface PurgeMarker {
+  /** 主键：${store}:${id}，与实体一一对应 */
+  key: string;
+  store: TrashStoreName;
+  /** 实体主键（readings/bills/premises 为 id；prices/budgets 为 premiseId） */
+  id: string;
+  /** 永久删除发生的时刻（ISO）。晚于它的实体改动视为「比删除更新」，标记作废 */
+  purgedAt: string;
+}
+
 // ---------- 同步元数据基类 ----------
 export interface EntityBase {
   id: string; // uuid v4
@@ -149,6 +180,15 @@ export interface Settings {
   autoBackupEnabled?: boolean; // 是否启用每周自动备份到 WebDAV（体验⑬）
   lastAutoBackupAt?: string; // 上次自动备份时间（ISO），用于判断是否已过 7 天
   keyBackupAt?: string; // 上次导出/上传设备密钥备份的时间（ISO），体验⑭的元数据，不含密钥本身
+  /** 回收站自动清理频率（0.1.2 新增）。缺省 'off'：清理会删数据，必须用户显式开启 */
+  trashAutoClean?: CleanupFrequency;
+  /**
+   * 墓碑保留天数（0.1.2 新增）：软删记录超过该天数后，自清理会将其永久删除。
+   * 缺省 30 天——足够覆盖「误删后过个周末才发现」的场景，又不至于无限堆积。
+   */
+  trashRetentionDays?: number;
+  /** 上次执行数据自清理的时间（ISO），用于判断周清 / 月清是否到期 */
+  lastCleanedAt?: string;
 }
 
 // ---------- WebDAV 同步配置（Phase 3 使用，先定义类型） ----------
