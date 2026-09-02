@@ -29,6 +29,7 @@ import { useSyncStatus } from '@/composables/useSyncStatus';
 import { useTrashStore } from '@/stores/trash';
 import { exportData, importData } from '@/utils/dataExport';
 import { logger } from '@/utils/logger';
+import { formatMonthLabel, monthKey, prevMonthKey } from '@/utils/dayjs';
 import type { DefaultView, BillTemplateId, ThemeMode, QuickRecordPop } from '@/types';
 import PriceSettingPanel from '@/components/settings/PriceSettingPanel.vue';
 import PremiseManager from '@/components/settings/PremiseManager.vue';
@@ -140,6 +141,26 @@ function onQuickPopSelect(value: QuickRecordPop): void {
 // ---- 月初自动弹上月账单 ----
 function onMonthlyBillToggle(val: boolean): void {
   settingsStore.update({ autoMonthlyBill: val });
+}
+
+/**
+ * 主动唤起上月结算单（与月初自动弹出完全同一套打印特效）。
+ *
+ * 弹层由 App.vue 持有，这里只发一条指令事件，回执（无房源 / 无账单 / 空账单）
+ * 也由 App.vue 统一 toast —— 设置页不需要为了弹一个浮层去重复持有账单计算与模板状态。
+ */
+function onShowLastMonthBill(): void {
+  eventBus.emit(EVENTS.REQUEST_MONTHLY_BILL);
+}
+/**
+ * 「查看上月结算单」副标题：把具体月份说出来，用户点之前就知道会看到哪张票。
+ *
+ * 刻意用函数而不是 computed —— computed 只依赖「当前时间」，没有任何响应式依赖，
+ * 求值一次就会被永久缓存，页面停留在设置页跨过月末后标签不会更新（时间不是响应式数据）。
+ * 放在模板里每次渲染现算，成本可忽略。
+ */
+function prevMonthLabel(): string {
+  return formatMonthLabel(prevMonthKey(monthKey()));
 }
 
 // ---- 导出数据 ----
@@ -315,6 +336,14 @@ onMounted(async () => {
             aria-label="月初自动弹上月账单"
             @click.stop="onMonthlyBillToggle(!autoMonthlyBill)"
           ></button>
+        </div>
+        <div class="sdb-row" role="button" tabindex="0" @click="onShowLastMonthBill">
+          <span class="sdb-row__ico">📄</span>
+          <span class="sdb-row__txt">
+            <span class="sdb-row__t">查看上月结算单</span>
+            <span class="sdb-row__d">按默认模板打印 {{ prevMonthLabel() }} 的结算单</span>
+          </span>
+          <span class="sdb-row__chev">›</span>
         </div>
         <div class="sdb-row" role="button" tabindex="0" @click="showViewPicker = true">
           <span class="sdb-row__ico">🧭</span>

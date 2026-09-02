@@ -15,6 +15,7 @@ import { monthKeyFromDate } from '@/utils/dayjs';
 import { monthlyUsage } from '@/utils/billing';
 import { eventBus, EVENTS } from '@/utils/eventBus';
 import { logger } from '@/utils/logger';
+import { shouldDiscardLoad } from '@/utils/loadGuard';
 
 // 月度用量计算已抽离到纯函数 src/utils/billing.ts（monthlyUsage），便于单测。
 
@@ -54,9 +55,73 @@ export const useBillsStore = defineStore('bills', () => {
     return round2(list.reduce((sum, b) => sum + b.totalCost, 0));
   }
 
+  /**
+   * 装载代际号：每次 load() 领一个号，只有「最后发起的那次」才允许写回内存。
+   *
+   * 存在意义：load() 是**整表替换**（bills.value = map），而 recomputeAll() 是
+   * **逐月增量赋值**（bills.value[id] = bill）。两者一旦交错就会出事 ——
+   * 路由是懒加载的，首屏视图的 onMounted 会自己调 load()，与 bootstrap 的多次
+   * IndexedDB 往返并发；若某次 getAllBills() 恰好在 recomputeAll() 执行中途 resolve，
+   * 整表替换会把刚重算完的结果从内存抹掉。后果不是「显示旧值」这么简单：
+   * 后续 computeBill 读到的 existing 是旧版，syncVersion 从旧值重新起步，
+   * 增量同步按「syncVersion > 上次同步点」扫描就永远扫不到这次改动；
+   * 下一轮远端的高版本旧账单按 LWW 胜出覆盖回来 ——
+   * 用户看到的就是「改了读数，账单过一会儿又变回原样」。
+   *
+   * 代际守卫让「先发起、晚返回」的那次自动作废，只认最后发起的那次，
+   * 不需要调用方做任何配合（视图照旧随便调 load()）。
+   */
+  let loadGeneration = 0;
+
+  /**
+   * 重算代际 / 进行中标记。
+   *
+   * 只靠 loadGeneration 挡不住反向的另一种交错：**先发起的重算还在跑，后发起的 load 回来了**。
+   * 后者是最新的一次装载，代际号对得上，但它读到的是重算开始前的快照（IndexedDB 单事务一致性），
+   * 整表替换照样会把重算已经写进内存的月份冲掉。
+   * 因此装载作废条件有三条，命中任一即丢弃：
+   *   ① 期间发起了更新的 load()；
+   *   ② 期间有任何重算开始或结束（recomputeSeq 变了）；
+   *   ③ 此刻正有重算在跑。
+   * 丢弃是安全的：重算本身会把结果同时写进数据库与内存，内存不会因此缺数据。
+   */
+  let recomputeSeq = 0;
+  let recomputeActive = false;
+
+  /** 进入重算窗口（见 recomputeSeq 的说明）。务必在 ensureLoaded() 之后再进，
+   *  否则装载阶段会被自己的栅栏挡住，导致账单永远装不进来。 */
+  async function withRecomputeFence<T>(fn: () => Promise<T>): Promise<T> {
+    recomputeSeq += 1;
+    recomputeActive = true;
+    try {
+      return await fn();
+    } finally {
+      recomputeActive = false;
+    }
+  }
+
   async function load(): Promise<void> {
+    const generation = ++loadGeneration;
+    const recomputeSnapshot = recomputeSeq;
     try {
       const all = await billRepo.getAllBills();
+      // 期间发生了更新的装载或任何重算 → 本次读到的已是过期快照，丢弃，
+      // 覆盖内存会把更新的那次结果（或期间完成的重算）冲掉。判定逻辑抽到纯函数便于单测。
+      const discard = shouldDiscardLoad({
+        generation,
+        latestGeneration: loadGeneration,
+        recomputeSnapshot,
+        recomputeSeq,
+        recomputeActive,
+      });
+      if (discard) {
+        logger.warn('store:bills', '丢弃过期的账单装载结果', {
+          reason: discard,
+          generation,
+          latest: loadGeneration,
+        });
+        return;
+      }
       const map: Record<string, Bill> = {};
       for (const b of all) {
         if (!b.isDeleted) map[b.id] = b;
@@ -102,8 +167,10 @@ export const useBillsStore = defineStore('bills', () => {
 
   async function recompute(premiseId: string, yearMonth: string): Promise<Bill> {
     await ensureLoaded();
-    const allReadings = await readingRepo.getAllReadings();
-    return computeBill(premiseId, yearMonth, allReadings);
+    return withRecomputeFence(async () => {
+      const allReadings = await readingRepo.getAllReadings();
+      return computeBill(premiseId, yearMonth, allReadings);
+    });
   }
 
   /**
@@ -186,15 +253,17 @@ export const useBillsStore = defineStore('bills', () => {
   async function recomputeMonths(premiseId: string, months: string[]): Promise<number> {
     if (!premiseId || months.length === 0) return 0;
     await ensureLoaded();
-    const all = await readingRepo.getAllReadings();
-    let changed = 0;
-    for (const m of months) {
-      const before = bills.value[`${premiseId}:${m}`]?.syncVersion;
-      const after = await computeBill(premiseId, m, all);
-      // 幂等短路时 computeBill 原样返回旧账单对象，syncVersion 不变
-      if (after.syncVersion !== before) changed++;
-    }
-    return changed;
+    return withRecomputeFence(async () => {
+      const all = await readingRepo.getAllReadings();
+      let changed = 0;
+      for (const m of months) {
+        const before = bills.value[`${premiseId}:${m}`]?.syncVersion;
+        const after = await computeBill(premiseId, m, all);
+        // 幂等短路时 computeBill 原样返回旧账单对象，syncVersion 不变
+        if (after.syncVersion !== before) changed++;
+      }
+      return changed;
+    });
   }
 
   /**
@@ -205,15 +274,17 @@ export const useBillsStore = defineStore('bills', () => {
   async function recomputePremise(premiseId: string): Promise<void> {
     if (!premiseId) return;
     await ensureLoaded();
-    const all = await readingRepo.getAllReadings();
-    const months = new Set<string>();
-    for (const r of all) {
-      if (r.isDeleted || r.premiseId !== premiseId) continue;
-      months.add(monthKeyFromDate(r.date));
-    }
-    for (const m of [...months].sort()) {
-      await computeBill(premiseId, m, all);
-    }
+    await withRecomputeFence(async () => {
+      const all = await readingRepo.getAllReadings();
+      const months = new Set<string>();
+      for (const r of all) {
+        if (r.isDeleted || r.premiseId !== premiseId) continue;
+        months.add(monthKeyFromDate(r.date));
+      }
+      for (const m of [...months].sort()) {
+        await computeBill(premiseId, m, all);
+      }
+    });
   }
 
   /**
@@ -222,22 +293,24 @@ export const useBillsStore = defineStore('bills', () => {
    */
   async function recomputeAll(): Promise<number> {
     await ensureLoaded();
-    // 按 (premiseId, monthKey) 组合去重，避免遍历不存在的 premise×month 组合。
-    // 全量读数只取一次，按月分组后复用，避免每条 month 重复扫描 IndexedDB。
-    const all = await readingRepo.getAllReadings();
-    const pairs = new Set<string>();
-    for (const r of all) {
-      if (r.isDeleted || !r.premiseId) continue;
-      pairs.add(`${r.premiseId}\u0000${monthKeyFromDate(r.date)}`); // \u0000 作分隔符防碰撞
-    }
-    let changed = 0;
-    for (const pair of pairs) {
-      const [premiseId, yearMonth] = pair.split('\u0000');
-      const before = bills.value[`${premiseId}:${yearMonth}`]?.syncVersion;
-      const after = await computeBill(premiseId, yearMonth, all);
-      if (after.syncVersion !== before) changed++;
-    }
-    return changed;
+    return withRecomputeFence(async () => {
+      // 按 (premiseId, monthKey) 组合去重，避免遍历不存在的 premise×month 组合。
+      // 全量读数只取一次，按月分组后复用，避免每条 month 重复扫描 IndexedDB。
+      const all = await readingRepo.getAllReadings();
+      const pairs = new Set<string>();
+      for (const r of all) {
+        if (r.isDeleted || !r.premiseId) continue;
+        pairs.add(`${r.premiseId}\u0000${monthKeyFromDate(r.date)}`); // \u0000 作分隔符防碰撞
+      }
+      let changed = 0;
+      for (const pair of pairs) {
+        const [premiseId, yearMonth] = pair.split('\u0000');
+        const before = bills.value[`${premiseId}:${yearMonth}`]?.syncVersion;
+        const after = await computeBill(premiseId, yearMonth, all);
+        if (after.syncVersion !== before) changed++;
+      }
+      return changed;
+    });
   }
 
   return {

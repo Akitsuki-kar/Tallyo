@@ -20,6 +20,14 @@ export const EVENTS = {
   ONLINE_CHANGED: 'online:changed',
   QUICK_RECORD: 'quick:record', // 侧栏「记一笔」→ App.vue 打开全局快速记录弹窗
   ONBOARDING_REPLAY: 'onboarding:replay', // 设置页「重看新手引导」→ App.vue 重启引导流
+  /**
+   * 设置页「查看上月结算单」→ App.vue 主动唤起月初账单弹层。
+   *
+   * 注意：这是纯 UI 指令事件，**不是**同步实体事件 —— 它不写 IndexedDB，
+   * 因此不需要接入 useAutoSync（推送）与 useSyncStatus（待同步计数）。
+   * 别把它和上面五类会落库的实体事件混为一谈。
+   */
+  REQUEST_MONTHLY_BILL: 'ui:requestMonthlyBill',
 } as const;
 
 class EventBus {

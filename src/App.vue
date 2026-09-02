@@ -14,13 +14,15 @@ import { usePWAInstall } from '@/composables/usePWAInstall';
 import { useTheme } from '@/composables/useTheme';
 import { useAutoSync } from '@/composables/useAutoSync';
 import { isOnboarded } from '@/composables/useOnboarding';
+import { useMonthlyBillPrompt } from '@/composables/useMonthlyBillPrompt';
+import type { ShowLastMonthResult } from '@/composables/useMonthlyBillPrompt';
 import { useSettingsStore } from '@/stores/settings';
 import { usePremisesStore } from '@/stores/premises';
-import { useBillsStore } from '@/stores/bills';
+import { showToast } from 'vant';
 import { eventBus, EVENTS } from '@/utils/eventBus';
 import { logger } from '@/utils/logger';
-import { dateKey, dayjs, monthKey, prevMonthKey } from '@/utils/dayjs';
-import type { Bill, ThemeMode } from '@/types';
+import { dateKey } from '@/utils/dayjs';
+import type { ThemeMode } from '@/types';
 import { useSyncStatus } from '@/composables/useSyncStatus';
 import { useUndo } from '@/composables/useUndo';
 import { useStoragePersistence } from '@/composables/useStoragePersistence';
@@ -32,7 +34,6 @@ const { canInstall, prompt } = usePWAInstall();
 const { toggle } = useTheme();
 const settings = useSettingsStore();
 const premises = usePremisesStore();
-const bills = useBillsStore();
 // 体验⑪：在线状态 + 待同步改动计数（横幅展示）
 const { online, pendingCount } = useSyncStatus();
 // 体验⑫：撤销条（删除操作后出现的 5 秒撤销）
@@ -114,57 +115,45 @@ function setLastQuickPopDate(value: string): void {
 }
 
 // ---- 月初账单弹层（0.1.1 功能 5）----
-// 防重复标记存「已弹过的月份」而不是日期：1 号内多次启动只弹第一次，
-// 且下个月 1 号自然失配、无需清理过期标记。
-const MONTHLY_POP_KEY = 'sdb:lastMonthlyBillPopMonth';
-const showMonthlyBill = ref(false);
-const monthlyBill = ref<Bill | null>(null);
-
-function getLastMonthlyPopMonth(): string {
-  try {
-    return localStorage.getItem(MONTHLY_POP_KEY) ?? '';
-  } catch {
-    return '';
-  }
-}
-function setLastMonthlyPopMonth(value: string): void {
-  try {
-    localStorage.setItem(MONTHLY_POP_KEY, value);
-  } catch {
-    /* 隐私模式等场景忽略写入失败 */
-  }
-}
+// 判定逻辑已抽到 composables/useMonthlyBillPrompt.ts。抽出来的原因是实现有四道硬伤，
+// 靠在 onMounted 里补 await 修不好（调用点一多就会漏）：
+//   ① 原先直接读 premises.currentPremiseId，而房源是 bootstrap 自己加载的，
+//      App.vue 的微任务还排在 bootstrap 前面 —— 拿到恒为空串，功能 100% 失效；
+//      现在统一 await「启动数据就绪」信号，顺序由 bootstrap 一处保证。
+//   ② 原先严格限定 1 号，用户 2、3 号才打开就永远看不到；现在放宽到月初 1~3 号窗口。
+//   ③ 原先只在 onMounted 判一次，桌面端/手机常驻跨过月末零点后不再触发；
+//      现在常驻监听跨日与回前台。
+//   ④ 原先读到的是账单自愈重算之前的值；现在弹出前对上月做一次定向重算。
+const {
+  bill: monthlyBill,
+  visible: showMonthlyBill,
+  close: closeMonthlyBill,
+  start: startMonthlyPrompt,
+  stop: stopMonthlyPrompt,
+  showLastMonthBill,
+} = useMonthlyBillPrompt({
+  // 引导 / Tour 占屏时不叠加弹层
+  canShow: () => !showOnboarding.value && !showTour.value,
+});
 
 /**
- * 每月 1 号自动弹出上月结算单（按默认账单模板 + 打印特效）。
+ * 设置页「查看上月结算单」→ 主动唤起同一个弹层。
  *
- * 四道闸门，任一不满足就静默跳过：设置已开 → 今天是 1 号 → 本月还没弹过 → 上月确有账单。
- * 最后一道很关键：新用户或上月没记读数时会生成不了账单（或金额为 0），
- * 弹一张空票没有信息量，只会变成打扰。
+ * 弹层由 App.vue 持有（覆盖全屏、层级统一），设置页只发一条指令事件，
+ * 不自己再挂一份 MonthlyBillModal —— 两份实例会有两套打印动画状态与层级冲突。
+ * 失败必须给回执：静默失败最容易让人以为「点了没反应」。
  */
-async function maybeShowMonthlyBill(): Promise<void> {
-  if (!settings.autoMonthlyBill) return;
-  if (dayjs().date() !== 1) return;
-  const thisMonth = monthKey();
-  if (getLastMonthlyPopMonth() === thisMonth) return;
-
-  const premiseId = premises.currentPremiseId;
-  if (!premiseId) return;
-  if (!bills.billList.length) await bills.load();
-
-  const ym = prevMonthKey(thisMonth);
-  const bill = bills.billList.find((b) => b.premiseId === premiseId && b.yearMonth === ym);
-  if (!bill || bill.totalCost <= 0) return;
-
-  // 先落标记再显示：若渲染阶段抛错，也不至于每次启动都重弹同一张票
-  setLastMonthlyPopMonth(thisMonth);
-  monthlyBill.value = bill;
-  showMonthlyBill.value = true;
-}
-
-function onMonthlyBillClose(): void {
-  showMonthlyBill.value = false;
-  monthlyBill.value = null;
+const SHOW_RESULT_MESSAGE: Record<Exclude<ShowLastMonthResult, 'shown' | 'busy'>, string> = {
+  'not-ready': '数据还在加载，请稍后再试',
+  'no-premise': '还没有房源，先添加一套房子吧',
+  'no-bill': '上月没有读数记录，暂时没有结算单',
+  empty: '上月账单没有金额也没有用量，无需展示',
+};
+async function onRequestMonthlyBill(): Promise<void> {
+  const result = await showLastMonthBill();
+  // 收窄掉无需提示的两态，剩下的按表回执；不用类型断言，避免以后新增状态时静默漏配文案
+  if (result === 'shown' || result === 'busy') return;
+  showToast(SHOW_RESULT_MESSAGE[result]);
 }
 
 const showInstall = computed(() => canInstall.value && !installDismissed.value);
@@ -243,6 +232,7 @@ onMounted(async () => {
   eventBus.on(EVENTS.THEME_CHANGED, onThemeChanged);
   eventBus.on(EVENTS.QUICK_RECORD, onQuickRecord);
   eventBus.on(EVENTS.ONBOARDING_REPLAY, onOnboardingReplay);
+  eventBus.on(EVENTS.REQUEST_MONTHLY_BILL, onRequestMonthlyBill);
   document.addEventListener('visibilitychange', onVisibilityPause);
   onVisibilityPause(); // 初始化时同步一次（处理已处于后台的极端情况）
 
@@ -252,12 +242,15 @@ onMounted(async () => {
     showOnboarding.value = true;
   }
 
-  // 启动自动弹出（若未进入新手引导）。设置未就绪时先补一次 load，
+  // 启动自动弹出。设置未就绪时先补一次 load，
   // 否则首屏读到的是 store 默认值，用户开过的档位会被当成「关闭」而漏弹。
   try {
     if (!settings.loaded) {
       await settings.load();
     }
+    // 月初账单：与是否进入引导无关地常驻启动（判定内部还会再挡一次引导状态），
+    // 这样用户中途完成引导后，跨日 / 回前台时依然能正常补弹。
+    startMonthlyPrompt();
     if (onboarded) {
       // ① 快速记录：off 不弹 / daily 每天首次 / always 每次启动都弹
       const mode = settings.quickRecordPop;
@@ -270,9 +263,6 @@ onMounted(async () => {
           quickRef.value?.open();
         }
       }
-      // ② 月初账单：仅 1 号触发；与快速记录同时命中时账单弹层叠在上层，
-      //    先让用户看结算单（这是月初真正关心的信息），关掉后底下的快速记录仍在。
-      await maybeShowMonthlyBill();
     }
   } catch (err) {
     logger.error('app', '读取设置或启动自动弹窗失败', {
@@ -285,7 +275,9 @@ onBeforeUnmount(() => {
   eventBus.off(EVENTS.THEME_CHANGED, onThemeChanged);
   eventBus.off(EVENTS.QUICK_RECORD, onQuickRecord);
   eventBus.off(EVENTS.ONBOARDING_REPLAY, onOnboardingReplay);
+  eventBus.off(EVENTS.REQUEST_MONTHLY_BILL, onRequestMonthlyBill);
   document.removeEventListener('visibilitychange', onVisibilityPause);
+  stopMonthlyPrompt();
 });
 </script>
 
@@ -349,7 +341,7 @@ onBeforeUnmount(() => {
       :bill="monthlyBill"
       :premise-name="premises.currentPremise?.name ?? ''"
       :template-id="settings.templateId"
-      @close="onMonthlyBillClose"
+      @close="closeMonthlyBill"
     />
 
     <!-- 新手引导：沉浸式卡片向导（首启 / 设置页重看） -->

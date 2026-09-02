@@ -28,6 +28,8 @@ export function useAutoSync(): { flush: () => void } {
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
   /** 被最小间隔节流拦下后的「补偿调度」定时器（见 waitForThrottle） */
   let throttleTimer: ReturnType<typeof setTimeout> | undefined;
+  /** 启动自动拉取的延迟定时器（挂载后 1.5s 触发，组件卸载时须一并清理） */
+  let startupTimer: ReturnType<typeof setTimeout> | undefined;
   let lastSyncTs = 0;
   let retries = 0;
   // 同步期事件抑制（死循环第三层防护）：sync() 执行期间置位 syncing。
@@ -166,7 +168,10 @@ export function useAutoSync(): { flush: () => void } {
     window.addEventListener('beforeunload', onBeforeUnload);
     // 启动自动拉
     if (syncStore.isConfigured) {
-      setTimeout(() => void doSync(), STARTUP_DELAY_MS);
+      startupTimer = setTimeout(() => {
+        startupTimer = undefined;
+        void doSync();
+      }, STARTUP_DELAY_MS);
     }
   });
 
@@ -182,6 +187,7 @@ export function useAutoSync(): { flush: () => void } {
     if (debounceTimer) clearTimeout(debounceTimer);
     if (retryTimer) clearTimeout(retryTimer);
     if (throttleTimer) clearTimeout(throttleTimer);
+    if (startupTimer) clearTimeout(startupTimer);
   });
 
   return { flush };

@@ -20,6 +20,8 @@ import {
   isCleanupDue,
 } from '@/utils/cleanup';
 import { filterPurgedEntities, entityKeyOf } from '@/sync/purge';
+import { shouldDiscardLoad } from '@/utils/loadGuard';
+import type { LoadGuardState } from '@/utils/loadGuard';
 import type { Reading, Bill, Premise, PriceRecord, Budget, Settings } from '@/types';
 
 let passed = 0;
@@ -790,6 +792,49 @@ function makeRecord(id: string, premiseId: string, isDeleted = false): { id: str
 // daysSince：损坏时间戳 → 视为已过期（交给清理处理）
 {
   assert(daysSince('not-a-date', new Date()) === Number.POSITIVE_INFINITY, 'daysSince: 损坏时间戳 → 无限');
+}
+
+// ─── shouldDiscardLoad：账单装载作废三条件（防 syncVersion 回退的根因）───
+{
+  // 基准：代际最新、重算无变化、无重算在跑 → 不丢弃
+  const base: LoadGuardState = {
+    generation: 3,
+    latestGeneration: 3,
+    recomputeSnapshot: 5,
+    recomputeSeq: 5,
+    recomputeActive: false,
+  };
+  assert(shouldDiscardLoad(base) === null, 'loadGuard: 正常装载 → 不丢弃');
+  // ① 期间发起了更新的 load()
+  assert(
+    shouldDiscardLoad({ ...base, latestGeneration: 4 }) === 'superseded-load',
+    'loadGuard: 有更新的 load → 丢弃(superseded-load)',
+  );
+  // ② 期间有任何重算开始或结束（seq 变化）
+  assert(
+    shouldDiscardLoad({ ...base, recomputeSeq: 6 }) === 'recompute-changed',
+    'loadGuard: 重算 seq 变化 → 丢弃(recompute-changed)',
+  );
+  // ③ 此刻正有重算在跑
+  assert(
+    shouldDiscardLoad({ ...base, recomputeActive: true }) === 'recompute-active',
+    'loadGuard: 重算进行中 → 丢弃(recompute-active)',
+  );
+  // 顺序：① 优先于 ②③（同一次过期，先报「被更新的 load 取代」）
+  assert(
+    shouldDiscardLoad({ ...base, latestGeneration: 4, recomputeActive: true }) === 'superseded-load',
+    'loadGuard: 多重过期时优先报 superseded-load',
+  );
+  // 重算跑完但落在 load 期间：快照过期、seq 变化、此刻不在跑 → 仍应丢弃
+  assert(
+    shouldDiscardLoad({ ...base, recomputeSnapshot: 4 }) === 'recompute-changed',
+    'loadGuard: 重算已结束但快照过期 → 丢弃',
+  );
+  // 代际落后但不落后最新？generation 落后于 latest 才算 superseded，与 recompute 无关
+  assert(
+    shouldDiscardLoad({ ...base, generation: 2 }) === 'superseded-load',
+    'loadGuard: 代际落后(2<3) → 丢弃',
+  );
 }
 
 // ─── 结果汇总 ───

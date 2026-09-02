@@ -27,6 +27,7 @@ import { useTrashStore } from '@/stores/trash';
 import { installExternalLinkInterceptor } from '@/native/openExternal';
 import { requestPersistentStorage } from '@/db/database';
 import { logger } from '@/utils/logger';
+import { markBootstrapFailed, markDataReady } from '@/utils/bootstrapReady';
 
 // 是否生产构建（import.meta.env 在各构建目标均有定义，此处做安全取值）
 const IS_PROD = (import.meta as { env?: { PROD?: boolean } }).env?.PROD ?? false;
@@ -113,6 +114,12 @@ async function bootstrap(): Promise<void> {
     });
   }
 
+  // 发出「核心数据已就绪」信号：settings / premises / readings / bills 均已装载且账单已自愈。
+  // 必须早于下面的自清洗与自动备份 —— 那些是 best-effort 后台任务（且自动备份要走网络），
+  // 不该让等数据的调用方一起干等。月初账单弹层正是靠这个信号避免读到空房源/未重算的账单，
+  // 详见 utils/bootstrapReady.ts 与 composables/useMonthlyBillPrompt.ts。
+  markDataReady();
+
   // 体验⑭：启动自清洗（周清/月清，见 stores/trash.ts）。best-effort，失败不影响主流程。
   // 放在启动账单自愈之后：自愈已把账单口径拉齐，这里再跑去重/重算不会重复做功；
   // 清理产生的永久删除先落本地（含 PurgeMarker），再随随后的自动同步推到各端，
@@ -148,8 +155,15 @@ async function bootstrap(): Promise<void> {
 }
 
 // 初始化失败也应优雅提示（而非白屏），并落日志便于排查。
-bootstrap().catch((err) => {
-  const message = err instanceof Error ? err.message : String(err);
-  logger.error('[SDB:bootstrap]', '初始化失败', { message });
-  showDialog({ title: '启动失败', message: '初始化数据失败，请刷新页面重试' }).catch(() => {});
-});
+bootstrap()
+  .catch((err) => {
+    const message = err instanceof Error ? err.message : String(err);
+    logger.error('[SDB:bootstrap]', '初始化失败', { message });
+    showDialog({ title: '启动失败', message: '初始化数据失败，请刷新页面重试' }).catch(() => {});
+  })
+  .finally(() => {
+    // 兜底：bootstrap 自身抛错时上面的 markDataReady 不会执行，
+    // 这里补一次标记，避免所有 await whenDataReady() 的调用方（月初账单弹层）永久挂起。
+    // 已就绪时 markBootstrapFailed 内部会直接返回，不会覆盖成功状态。
+    markBootstrapFailed(new Error('bootstrap 未完成'));
+  });

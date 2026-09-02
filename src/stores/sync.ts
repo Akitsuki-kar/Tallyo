@@ -347,19 +347,19 @@ export const useSyncStore = defineStore('sync', () => {
     }
   }
 
-    return {
-      config,
-      status,
-      lastSyncAt,
-      error,
-      progress,
-      isConfigured,
-      loadConfig,
-      saveConfig,
-      testConnection,
-      sync,
-      runAutoBackup,
-      uploadKeyBackup,
-      downloadKeyBackup,
-    };
+  return {
+    config,
+    status,
+    lastSyncAt,
+    error,
+    progress,
+    isConfigured,
+    loadConfig,
+    saveConfig,
+    testConnection,
+    sync,
+    runAutoBackup,
+    uploadKeyBackup,
+    downloadKeyBackup,
+  };
 });
