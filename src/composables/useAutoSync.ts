@@ -61,6 +61,27 @@ export function useAutoSync(): { flush: () => void } {
     }, wait);
   }
 
+  /**
+   * 敏感操作紧急同步：绕过 30s 防抖，立即发起（仍受 60s 最小间隔约束）。
+   *
+   * 被节流拦下时的处理分两种（都不丢意图）：
+   *  - 页面可见 → waitForThrottle 排补偿任务，到期后 doSync；
+   *  - 页面隐藏 → waitForThrottle 不排定时器（省电），但这里先把 pending 置位，
+   *    回前台时 onVisibility 会因 pending 补推一次 —— 这正是「删除/清空后立刻切后台」
+   *    场景下同步不被吞掉的保证（旧实现里该窗口会永久卡住，直到下一次别的编辑）。
+   */
+  function requestSync(): void {
+    // 同步进行中：交由 dirtyDuringSync 在 sync 结束后补推，避免并发两轮同步
+    if (syncing) {
+      dirtyDuringSync = true;
+      return;
+    }
+    if (!syncStore.isConfigured) return;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return; // 离线积压，联网后补推
+    pending.value = true; // 兜底标记：页面隐藏/同步失败时靠 onVisibility 与重试路径补推
+    void doSync();
+  }
+
   async function doSync(): Promise<void> {
     const now = Date.now();
     // 后台冻结：App 在后台（被切走/锁屏）时不发起同步网络请求，
@@ -81,6 +102,7 @@ export function useAutoSync(): { flush: () => void } {
       const res = await syncStore.sync();
       if (res.code === 0) {
         retries = 0;
+        pending.value = false; // 本轮已把全部本地改动推上去，清除待同步标记（requestSync 置位后在此收敛）
         return;
       }
       // 失败指数退避重试（最多 MAX_RETRIES 次）
@@ -138,6 +160,8 @@ export function useAutoSync(): { flush: () => void } {
   const offBudget = eventBus.on(EVENTS.BUDGET_CHANGED, scheduleSync);
   const offPremise = eventBus.on(EVENTS.PREMISE_CHANGED, scheduleSync);
   const offPrice = eventBus.on(EVENTS.PRICE_CHANGED, scheduleSync);
+  // 敏感操作紧急同步：绕过防抖立即推（见 requestSync 注释）。非落库实体，不进 useSyncStatus 计数。
+  const offSyncRequested = eventBus.on(EVENTS.SYNC_REQUESTED, requestSync);
 
   function onOnline(): void {
     if (syncStore.isConfigured) void doSync(); // 补推离线期间积压的变更
@@ -181,6 +205,7 @@ export function useAutoSync(): { flush: () => void } {
     offBudget();
     offPremise();
     offPrice();
+    offSyncRequested();
     window.removeEventListener('online', onOnline);
     document.removeEventListener('visibilitychange', onVisibility);
     window.removeEventListener('beforeunload', onBeforeUnload);

@@ -18,6 +18,18 @@ export const EVENTS = {
   THEME_CHANGED: 'theme:changed',
   SYNC_DONE: 'sync:done',
   ONLINE_CHANGED: 'online:changed',
+  /**
+   * 敏感操作（删除房源 / 永久删除 / 清空回收站 / 恢复 / 自清洗清理墓碑）后请求**立即同步**。
+   *
+   * 为什么需要它：删除类操作是「不可逆意图」，若只走常规 30s 防抖 + 60s 节流，
+   * 云端会长时间停留旧数据；若这期间对端改动过同一记录（updatedAt 更新），
+   * LWW 下本地删除意图会被「更新的改动」推翻，甚至被云端旧记录覆盖（0.1.1 无墓碑协议时的经典事故）。
+   * 紧急同步只绕过防抖、仍尊重 60s 最小间隔（坚果云限频），被节流拦下时排补偿任务、绝不丢弃。
+   *
+   * ⚠️ 本事件**不是落库实体**（不写 IndexedDB），因此**不接入** useSyncStatus 的「待同步计数」；
+   * 只有 READING/BILL/BUDGET/PREMISE/PRICE 五类实体事件才需要三处订阅。本事件仅由 useAutoSync 订阅。
+   */
+  SYNC_REQUESTED: 'sync:requested',
   QUICK_RECORD: 'quick:record', // 侧栏「记一笔」→ App.vue 打开全局快速记录弹窗
   ONBOARDING_REPLAY: 'onboarding:replay', // 设置页「重看新手引导」→ App.vue 重启引导流
   /**

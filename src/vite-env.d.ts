@@ -9,3 +9,7 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+// 由 vite.config.ts 的 define 注入：应用版本号（唯一事实来源 package.json）。
+// 设置页「关于」直接渲染该常量，改版本只需动 package.json 一处。
+declare const __APP_VERSION__: string;

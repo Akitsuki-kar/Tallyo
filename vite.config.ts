@@ -1,4 +1,5 @@
 import { fileURLToPath, URL } from 'node:url';
+import { readFileSync } from 'node:fs';
 import { defineConfig, type Plugin } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import { VitePWA } from 'vite-plugin-pwa';
@@ -6,6 +7,13 @@ import { VitePWA } from 'vite-plugin-pwa';
 // 是否为 Tauri 原生壳构建（由 dev:tauri / build:tauri 经 cross-env TAURI_BUILD=1 传入）。
 // 该标记决定两件事：① index.html 的 CSP 是否放宽（允许直连 WebDAV）；② 是否生成 PWA Service Worker。
 const isTauri = !!process.env.TAURI_BUILD;
+
+// 应用版本号：唯一事实来源是 package.json（构建时注入为 __APP_VERSION__）。
+// 设置页「关于」直接渲染该常量 —— 从此改版本只需动 package.json 一处，
+// 杜绝「打包后版本号没同步」这类漏改事故（0.1.1→0.1.2 时曾踩过）。
+const pkg = JSON.parse(readFileSync(fileURLToPath(new URL('./package.json', import.meta.url)), 'utf-8')) as {
+  version: string;
+};
 
 // 按目标注入 Content-Security-Policy：
 // - Web/PWA：保持严格 'self'，同步走同源反代（/dav/），connect-src 仅 'self'。
@@ -54,9 +62,11 @@ export default defineConfig({
       external: buildExternals(),
     },
   },
-  // 注入 import.meta.env.TAURI_BUILD，供 main.ts 守卫 registerSW 使用。
+  // 注入 import.meta.env.TAURI_BUILD（供 main.ts 守卫 registerSW 使用）与
+  // __APP_VERSION__（供设置页「关于」渲染版本号，唯一事实来源 package.json）。
   define: {
     'import.meta.env.TAURI_BUILD': JSON.stringify(isTauri),
+    __APP_VERSION__: JSON.stringify(pkg.version),
   },
   resolve: {
     alias: {

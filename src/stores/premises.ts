@@ -144,6 +144,9 @@ export const usePremisesStore = defineStore('premises', () => {
       currentPremiseId.value = list.value[0].id;
     }
     eventBus.emit(EVENTS.PREMISE_CHANGED, { id });
+    // 删除房源是「不可逆意图」：立即同步，避免云端长期停留旧数据，
+    // 也避免对端在删除未传播期间改动该房源（updatedAt 更新）导致 LWW 下删除意图被推翻。
+    eventBus.emit(EVENTS.SYNC_REQUESTED);
 
     // 级联清理该房源的「按房源配置」（单价 / 预算），软删墓碑随同步传播。
     // 不清理的话这两条记录会作为孤儿数据永久留在本地与远端快照里，且无任何 UI 可再删除。

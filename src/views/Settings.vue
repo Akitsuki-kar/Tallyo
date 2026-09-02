@@ -47,6 +47,8 @@ const syncStore = useSyncStore();
 const trashStore = useTrashStore();
 const { canInstall, prompt: promptInstall } = usePWAInstall();
 const { online } = useSyncStatus();
+// 版本号由 vite 构建时从 package.json 注入（__APP_VERSION__），唯一事实来源，改版本只动 package.json。
+const appVersion = __APP_VERSION__;
 
 const { theme, quickRecordPop, autoMonthlyBill, defaultView, templateId } = storeToRefs(settingsStore);
 
@@ -440,7 +442,7 @@ onMounted(async () => {
         <div class="sdb-row" role="button" tabindex="0">
           <span class="sdb-row__ico">🏷️</span>
           <span class="sdb-row__txt"><span class="sdb-row__t">版本</span></span>
-          <span class="sdb-row__v">0.1.2</span>
+          <span class="sdb-row__v">{{ appVersion }}</span>
         </div>
         <div class="sdb-chips">
           <button class="sdb-chip" type="button" @click="showAuthorSheet = true"><em>✍️</em>作者信息</button>

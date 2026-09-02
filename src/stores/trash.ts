@@ -322,6 +322,9 @@ export const useTrashStore = defineStore('trash', () => {
         }
       }
       items.value = items.value.filter((i) => i.key !== key);
+      // 恢复是敏感操作：立即同步，让对端尽快看到「这条记录又回来了」，
+      // 避免对端在恢复未传播期间执行清空回收站把刚恢复的记录再次永久删除。
+      eventBus.emit(EVENTS.SYNC_REQUESTED);
       return true;
     } catch (err) {
       logger.error('store:trash', '恢复回收站条目失败', {
@@ -348,6 +351,9 @@ export const useTrashStore = defineStore('trash', () => {
       await reloadStore(item.store);
       items.value = items.value.filter((i) => i.key !== key);
       emitStoreEvent(item.store, item.id);
+      // 永久删除是「不可逆意图」：立即同步（绕过防抖），把 PurgeMarker 尽快推上去，
+      // 否则下一轮「本地无、远端有墓碑」的 LWW 会把刚删的东西原样拉回来。
+      eventBus.emit(EVENTS.SYNC_REQUESTED);
       return true;
     } catch (err) {
       logger.error('store:trash', '永久删除失败', {
@@ -374,6 +380,9 @@ export const useTrashStore = defineStore('trash', () => {
       ]);
       items.value = [];
       for (const store of new Set(list.map((i) => i.store))) emitStoreEvent(store);
+      // 清空回收站是整批「不可逆意图」：立即同步，把整批 PurgeMarker 一次推上去，
+      // 最小化「云端还有旧数据」的窗口（对端设备越晚看到删除，越可能改动它并触发 LWW 复活）。
+      eventBus.emit(EVENTS.SYNC_REQUESTED);
       return list.length;
     } catch (err) {
       logger.error('store:trash', '清空回收站失败', {
@@ -556,6 +565,8 @@ export const useTrashStore = defineStore('trash', () => {
     }
     await load();
     await settings.update({ lastCleanedAt: nowIso() });
+    // 自清洗可能永久删除了过期墓碑：立即同步，把 PurgeMarker 推上去（否则远端旧墓碑会被 LWW 拉回）。
+    eventBus.emit(EVENTS.SYNC_REQUESTED);
 
     const report: CleanupReport = {
       at: nowIso(),
