@@ -38,6 +38,11 @@ async function initView(): Promise<void> {
       await premises.seedIfEmpty();
     }
     await readings.load();
+    // 与首页顶栏显示的当月保持一致：首次进入读数页默认只看本月，而非「全部」。
+    // 用户仍可用月份导航的「全部」清除过滤查看历史。
+    if (!readings.filter.month) {
+      readings.setFilter({ month: monthKey() });
+    }
     if (premises.currentPremiseId) await prices.ensureDefault(premises.currentPremiseId);
   } catch (err) {
     logger.error('readings:view', '初始化读数页失败', {

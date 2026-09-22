@@ -22,6 +22,7 @@ import { showToast } from 'vant';
 import { eventBus, EVENTS } from '@/utils/eventBus';
 import { logger } from '@/utils/logger';
 import { dateKey } from '@/utils/dayjs';
+import { whenDataReady } from '@/utils/bootstrapReady';
 import type { ThemeMode } from '@/types';
 import { useSyncStatus } from '@/composables/useSyncStatus';
 import { useUndo } from '@/composables/useUndo';
@@ -253,14 +254,26 @@ onMounted(async () => {
     startMonthlyPrompt();
     if (onboarded) {
       // ① 快速记录：off 不弹 / daily 每天首次 / always 每次启动都弹
-      const mode = settings.quickRecordPop;
-      if (mode === 'always') {
-        quickRef.value?.open();
-      } else if (mode === 'daily') {
-        const today = dateKey();
-        if (getLastQuickPopDate() !== today) {
-          setLastQuickPopDate(today);
+      //    自动弹出前先等启动核心数据就绪，确保弹出的「快速记账」能拿到当前房源，
+      //    避免 App.vue onMounted 早于 bootstrap 装载房源导致的空白房源竞态。
+      //    bootstrap 失败时 whenDataReady 会 reject，此处降级为「本次不自动弹」
+      //    （用户仍可手动点「记一笔」），不阻塞首屏。
+      let dataReady = true;
+      try {
+        await whenDataReady();
+      } catch {
+        dataReady = false;
+      }
+      if (dataReady) {
+        const mode = settings.quickRecordPop;
+        if (mode === 'always') {
           quickRef.value?.open();
+        } else if (mode === 'daily') {
+          const today = dateKey();
+          if (getLastQuickPopDate() !== today) {
+            setLastQuickPopDate(today);
+            quickRef.value?.open();
+          }
         }
       }
     }

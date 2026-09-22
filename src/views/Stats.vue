@@ -120,6 +120,24 @@ const pieTitle = computed(() =>
 
 const money = (n: number): string => formatCurrency(n);
 
+// ---- 读数条数（按区间）：按所选房源维度 + 时间跨度统计各月读数条数 ----
+// 首页「本月条数」的宏观展开：统计页按区间展示每个月的读数条数分布。
+const readingCounts = computed(() => {
+  const pid = premisesStore.currentPremiseId;
+  return rangeMonths.value.map((m) => {
+    const count = readingsStore.items.filter(
+      (r) => !r.isDeleted && (scope.value === 'all' || r.premiseId === pid) && r.date.startsWith(m),
+    ).length;
+    return { month: `${Number(m.slice(5))}月`, count };
+  });
+});
+const READING_BAR_PX = 88;
+const maxReadingCount = computed(() => Math.max(1, ...readingCounts.value.map((c) => c.count)));
+function barHeightPx(n: number): number {
+  if (n <= 0) return 3;
+  return Math.max(3, Math.round((n / maxReadingCount.value) * READING_BAR_PX));
+}
+
 // ---- 视图切换：月度（原有三图）/ 每日（0.1.1 新增） ----
 const viewMode = ref<'monthly' | 'daily'>('monthly');
 
@@ -223,6 +241,22 @@ onMounted(async () => {
             />
           </section>
         </div>
+
+        <!-- 读数条数（按区间）：对应首页「本月条数」的逐月分布 -->
+        <section class="sdb-card">
+          <h3 class="sdb-card__title">读数条数（按区间）</h3>
+          <div v-if="readingCounts.some((c) => c.count > 0)" class="sdb-countbars">
+            <div v-for="c in readingCounts" :key="c.month" class="sdb-countbars__col">
+              <div class="sdb-countbars__track">
+                <div class="sdb-countbars__bar" :style="{ height: barHeightPx(c.count) + 'px' }">
+                  <span class="sdb-countbars__num">{{ c.count }}</span>
+                </div>
+              </div>
+              <div class="sdb-countbars__label">{{ c.month }}</div>
+            </div>
+          </div>
+          <EmptyState v-else text="区间内暂无读数" hint="先去记录读数，再回来看条数分布" />
+        </section>
       </template>
     </template>
 
@@ -375,6 +409,51 @@ onMounted(async () => {
   padding: 6px 12px;
   font-size: 16px;
   line-height: 1;
+}
+/* 读数条数（按区间）迷你柱状 */
+.sdb-countbars {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  padding-top: 6px;
+}
+.sdb-countbars__col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.sdb-countbars__track {
+  height: 96px;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.sdb-countbars__bar {
+  position: relative;
+  width: 70%;
+  max-width: 26px;
+  min-height: 3px;
+  background: var(--sdb-primary);
+  border-radius: 6px 6px 2px 2px;
+  transition: height var(--sdb-dur) var(--sdb-ease-out);
+}
+.sdb-countbars__num {
+  position: absolute;
+  top: -18px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--sdb-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.sdb-countbars__label {
+  font-size: 11px;
+  color: var(--sdb-text-secondary);
 }
 /* 尊重降低动效偏好 */
 @media (prefers-reduced-motion: reduce) {

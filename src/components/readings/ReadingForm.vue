@@ -96,6 +96,19 @@ function initForm(): void {
 onMounted(initForm);
 watch(() => props.editReading, initForm);
 
+// 启动时序竞态防护：自动弹出的「快速记账」可能在房源装载完成前就挂载本表单
+// （此时 premises.currentPremiseId 仍为空串），onMounted 里 initForm 读到的就是空房源。
+// 这里等启动数据就绪、当前房源回填后，给 form.premiseId 兜底设为当前房源；
+// 仅新增模式生效（编辑模式房源已锁定，不应改动）。
+watch(
+  () => premises.currentPremiseId,
+  (id) => {
+    if (!props.editReading && !form.premiseId && id) {
+      form.premiseId = id;
+    }
+  },
+);
+
 // ---------- 日期选择 ----------
 const minDate = new Date(2000, 0, 1);
 const maxDate = new Date(2035, 11, 31);
@@ -112,8 +125,8 @@ function onDateConfirm(): void {
 
 // ---------- 房源选择 ----------
 function openPremiseSheet(): void {
-  // 极简模式不显示房源；编辑模式锁定房源不可改
-  if (props.compact || isEdit.value) return;
+  // 编辑模式锁定房源不可改；新增模式（含极简/快速记账）允许切换归属
+  if (isEdit.value) return;
   showPremiseSheet.value = true;
 }
 function selectPremise(id: string): void {
@@ -199,15 +212,15 @@ async function onSubmit(): Promise<void> {
 <template>
   <div class="reading-form">
     <van-cell-group inset>
-      <!-- 房源（仅非极简模式显示）：编辑模式锁定为只读 -->
+      <!-- 房源：编辑模式锁定为只读；新增模式（含极简/快速记账）始终显示并允许切换 -->
       <van-cell
-        v-if="!props.compact && isEdit"
+        v-if="isEdit"
         title="房源"
         :value="currentPremiseName"
         label="归属已锁定，如需变更请删除后重新记录"
       />
       <van-field
-        v-else-if="!props.compact"
+        v-else
         label="房源"
         :model-value="currentPremiseName"
         readonly
